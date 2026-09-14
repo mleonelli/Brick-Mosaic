@@ -1,0 +1,6 @@
+{
+  "name": "Lego Mosaic Studio",
+  "description": "Transform any picture into official Lego 1x1 dot mosaics with customizable palettes, baseplate sizes, printable PDF building instructions, and BrickLink part list exports.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
