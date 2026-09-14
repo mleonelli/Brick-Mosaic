@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { ZoomIn, ZoomOut, Maximize2, Eye, EyeOff, Hash, Grid, Sparkles } from 'lucide-react';
-import { DotShape, LegoColor, MosaicData, MosaicSettings } from '../types';
+import { ZoomIn, ZoomOut, Maximize2, Grid, Sparkles, Box } from 'lucide-react';
+import { DotShape, LegoColor, MosaicData, MosaicSettings, OptimizationSummary, PlacedPiece } from '../types';
 
 interface MosaicCanvasProps {
   mosaic: MosaicData | null;
@@ -8,6 +8,7 @@ interface MosaicCanvasProps {
   highlightedColorId: string | null;
   onHighlightColor: (colorId: string | null) => void;
   onSelectColorFromPixel?: (color: LegoColor) => void;
+  optimization?: OptimizationSummary | null;
 }
 
 export const MosaicCanvas: React.FC<MosaicCanvasProps> = ({
@@ -16,13 +17,21 @@ export const MosaicCanvas: React.FC<MosaicCanvasProps> = ({
   highlightedColorId,
   onHighlightColor,
   onSelectColorFromPixel,
+  optimization,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // View state
   const [zoomLevel, setZoomLevel] = useState<number>(1);
-  const [hoverPixel, setHoverPixel] = useState<{ x: number; y: number; color: LegoColor; plateNum: number } | null>(null);
+  const [viewMode, setViewMode] = useState<'pieces' | 'dots'>('pieces');
+  const [hoverPixel, setHoverPixel] = useState<{
+    x: number;
+    y: number;
+    color: LegoColor;
+    plateNum: number;
+    piece: PlacedPiece | null;
+  } | null>(null);
 
   // Pan state
   const [isPanning, setIsPanning] = useState(false);
@@ -34,6 +43,8 @@ export const MosaicCanvas: React.FC<MosaicCanvasProps> = ({
     setZoomLevel(1);
     setPanOffset({ x: 0, y: 0 });
   }, [mosaic?.width, mosaic?.height]);
+
+  const showOptimizedPieces = settings.enableOptimization && !!optimization && viewMode === 'pieces';
 
   // Main draw loop
   const draw = useCallback(() => {
@@ -65,11 +76,164 @@ export const MosaicCanvas: React.FC<MosaicCanvasProps> = ({
     ctx.fillStyle = '#11141A';
     ctx.fillRect(0, 0, fullW, fullH);
 
-    const radius = dotSize * 0.45;
-    const innerStudRadius = dotSize * 0.22;
+    if (showOptimizedPieces && optimization) {
+      // ================= MULTI-STUD CONSOLIDATED PIECES RENDERING =================
+      const pad = Math.max(0.6, dotSize * 0.04);
 
-    // 2. Draw each 1x1 dot
-    for (let y = 0; y < height; y++) {
+      for (const piece of optimization.pieces) {
+        const px = piece.x * dotSize;
+        const py = piece.y * dotSize;
+        const pw = piece.width * dotSize;
+        const ph = piece.height * dotSize;
+        const color = piece.color;
+
+        const isHighlighted = highlightedColorId === null || color.id === highlightedColorId;
+        ctx.globalAlpha = isHighlighted ? 1 : 0.18;
+
+        const innerX = px + pad;
+        const innerY = py + pad;
+        const innerW = pw - pad * 2;
+        const innerH = ph - pad * 2;
+
+        // Drop shadow under piece edge
+        ctx.fillStyle = '#06080c';
+        ctx.fillRect(innerX + 0.6, innerY + 0.8, innerW, innerH);
+
+        // Piece solid body
+        ctx.fillStyle = color.hex;
+        ctx.fillRect(innerX, innerY, innerW, innerH);
+
+        if (piece.family === 'tile') {
+          // ----- SMOOTH TILE (No studs, polished surface & clean bevel) -----
+          // Top-Left Bevel Highlight
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.38)';
+          ctx.lineWidth = Math.max(0.8, dotSize * 0.08);
+          ctx.beginPath();
+          ctx.moveTo(innerX, innerY + innerH);
+          ctx.lineTo(innerX, innerY);
+          ctx.lineTo(innerX + innerW, innerY);
+          ctx.stroke();
+
+          // Bottom-Right Bevel Shadow
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.42)';
+          ctx.lineWidth = Math.max(0.8, dotSize * 0.08);
+          ctx.beginPath();
+          ctx.moveTo(innerX + innerW, innerY);
+          ctx.lineTo(innerX + innerW, innerY + innerH);
+          ctx.lineTo(innerX, innerY + innerH);
+          ctx.stroke();
+
+          // Central sheen gloss
+          const glossGrad = ctx.createLinearGradient(innerX, innerY, innerX + innerW, innerY + innerH);
+          glossGrad.addColorStop(0, 'rgba(255, 255, 255, 0.08)');
+          glossGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0)');
+          glossGrad.addColorStop(1, 'rgba(0, 0, 0, 0.08)');
+          ctx.fillStyle = glossGrad;
+          ctx.fillRect(innerX + 1, innerY + 1, innerW - 2, innerH - 2);
+
+          // Dimension indicator for multi-stud tiles or when symbols are active
+          if ((piece.area > 1 || showSymbols) && dotSize >= 10) {
+            const label = showSymbols ? color.symbol : (piece.area > 1 ? piece.studDims : '');
+            if (label) {
+              const fontSize = Math.max(8, Math.min(piece.width, piece.height) * dotSize * 0.28);
+              ctx.font = `bold ${fontSize}px sans-serif`;
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.fillStyle = color.textColor;
+              ctx.globalAlpha = isHighlighted ? (showSymbols ? 0.85 : 0.65) : 0.15;
+              ctx.fillText(label, innerX + innerW / 2, innerY + innerH / 2);
+            }
+          }
+        } else {
+          // ----- STUDDED PLATE (With authentic raised studs on each coordinate) -----
+          // Plate Outer Perimeter Bevel
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.32)';
+          ctx.lineWidth = Math.max(0.8, dotSize * 0.07);
+          ctx.beginPath();
+          ctx.moveTo(innerX, innerY + innerH);
+          ctx.lineTo(innerX, innerY);
+          ctx.lineTo(innerX + innerW, innerY);
+          ctx.stroke();
+
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.38)';
+          ctx.lineWidth = Math.max(0.8, dotSize * 0.07);
+          ctx.beginPath();
+          ctx.moveTo(innerX + innerW, innerY);
+          ctx.lineTo(innerX + innerW, innerY + innerH);
+          ctx.lineTo(innerX, innerY + innerH);
+          ctx.stroke();
+
+          // Raised studs for each 1x1 position in the plate
+          const studRadius = dotSize * 0.24;
+          for (let dy = 0; dy < piece.height; dy++) {
+            for (let dx = 0; dx < piece.width; dx++) {
+              const cx = (piece.x + dx) * dotSize + dotSize / 2;
+              const cy = (piece.y + dy) * dotSize + dotSize / 2;
+
+              // Stud body
+              ctx.beginPath();
+              ctx.arc(cx, cy, studRadius, 0, Math.PI * 2);
+              ctx.fillStyle = color.hex;
+              ctx.fill();
+
+              // Stud rim outline
+              ctx.strokeStyle = 'rgba(0, 0, 0, 0.28)';
+              ctx.lineWidth = Math.max(0.5, dotSize * 0.04);
+              ctx.stroke();
+
+              // Stud top highlight arc
+              ctx.beginPath();
+              ctx.arc(cx, cy, studRadius - 0.4, Math.PI * 0.75, Math.PI * 1.75);
+              ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+              ctx.lineWidth = Math.max(0.6, dotSize * 0.07);
+              ctx.stroke();
+
+              // Stud bottom shadow arc
+              ctx.beginPath();
+              ctx.arc(cx, cy, studRadius - 0.4, -Math.PI * 0.25, Math.PI * 0.75);
+              ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
+              ctx.lineWidth = Math.max(0.6, dotSize * 0.07);
+              ctx.stroke();
+
+              // Symbols if enabled
+              if (showSymbols && dotSize >= 12) {
+                const fontSize = Math.max(7, Math.floor(dotSize * 0.3));
+                ctx.font = `bold ${fontSize}px sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = color.textColor;
+                ctx.globalAlpha = isHighlighted ? 0.9 : 0.2;
+                ctx.fillText(color.symbol, cx, cy);
+                ctx.globalAlpha = isHighlighted ? 1 : 0.18;
+              }
+            }
+          }
+
+          // Subtle piece boundary indicator for plates larger than 1x1
+          if (piece.area > 1 && dotSize >= 12 && !showSymbols) {
+            const fontSize = Math.max(8, Math.min(piece.width, piece.height) * dotSize * 0.22);
+            ctx.font = `bold ${fontSize}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = color.textColor;
+            ctx.globalAlpha = isHighlighted ? 0.45 : 0.1;
+            ctx.fillText(piece.studDims, innerX + innerW / 2, innerY + innerH / 2);
+          }
+        }
+
+        // Highlight ring if currently active color
+        if (highlightedColorId === color.id) {
+          ctx.strokeStyle = '#FACC15';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(innerX - 1, innerY - 1, innerW + 2, innerH + 2);
+        }
+      }
+    } else {
+      const radius = dotSize * 0.45;
+      const innerStudRadius = dotSize * 0.22;
+
+      // 2. Draw each 1x1 dot
+      for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const color = pixels[y][x];
         const cx = x * dotSize + dotSize / 2;
@@ -208,6 +372,7 @@ export const MosaicCanvas: React.FC<MosaicCanvasProps> = ({
         }
       }
     }
+  }
 
     ctx.globalAlpha = 1;
 
@@ -249,7 +414,7 @@ export const MosaicCanvas: React.FC<MosaicCanvasProps> = ({
       ctx.lineWidth = 2.5;
       ctx.strokeRect(0, 0, fullW, fullH);
     }
-  }, [mosaic, settings, highlightedColorId]);
+  }, [mosaic, settings, highlightedColorId, showOptimizedPieces, optimization]);
 
   useEffect(() => {
     draw();
@@ -283,8 +448,9 @@ export const MosaicCanvas: React.FC<MosaicCanvasProps> = ({
       const plateX = Math.floor(px / subSize);
       const plateY = Math.floor(py / subSize);
       const plateNum = plateY * subPlatesX + plateX + 1;
+      const piece = (showOptimizedPieces && optimization) ? optimization.pieceGrid[py]?.[px] || null : null;
 
-      setHoverPixel({ x: px, y: py, color, plateNum });
+      setHoverPixel({ x: px, y: py, color, plateNum, piece });
     } else {
       setHoverPixel(null);
     }
@@ -356,6 +522,38 @@ export const MosaicCanvas: React.FC<MosaicCanvasProps> = ({
             </span>
           )}
         </div>
+
+        {/* Pieces vs Studs View Mode Switcher */}
+        {settings.enableOptimization && optimization && (
+          <div className="flex items-center bg-slate-800/90 p-0.5 rounded-lg border border-slate-700/70 text-[11px]">
+            <button
+              id="view-mode-pieces-btn"
+              onClick={() => setViewMode('pieces')}
+              className={`px-2.5 py-1 rounded-md font-medium transition flex items-center gap-1.5 ${
+                viewMode === 'pieces'
+                  ? 'bg-amber-500 text-slate-950 shadow-sm font-semibold'
+                  : 'text-slate-300 hover:text-white'
+              }`}
+              title="Show consolidated multi-stud LEGO parts layout"
+            >
+              <Box className="w-3.5 h-3.5" />
+              <span>Pieces ({optimization.totalPieces})</span>
+            </button>
+            <button
+              id="view-mode-dots-btn"
+              onClick={() => setViewMode('dots')}
+              className={`px-2.5 py-1 rounded-md font-medium transition flex items-center gap-1.5 ${
+                viewMode === 'dots'
+                  ? 'bg-amber-500 text-slate-950 shadow-sm font-semibold'
+                  : 'text-slate-300 hover:text-white'
+              }`}
+              title="Show raw 1×1 stud dots grid"
+            >
+              <Grid className="w-3.5 h-3.5" />
+              <span>1×1 Studs ({mosaic.totalDots})</span>
+            </button>
+          </div>
+        )}
 
         {/* Quick Zoom & Reset */}
         <div className="flex items-center gap-1 bg-slate-800/80 p-1 rounded-lg border border-slate-700/60">
@@ -448,6 +646,15 @@ export const MosaicCanvas: React.FC<MosaicCanvasProps> = ({
                 <span className="text-slate-500">•</span>
                 <span className="font-mono text-slate-400">{hoverPixel.color.hex}</span>
               </div>
+              {hoverPixel.piece && (
+                <div className="mt-1 pt-1 border-t border-slate-700/60 flex items-center gap-2 text-[10px]">
+                  <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono font-bold">
+                    {hoverPixel.piece.family.toUpperCase()} {hoverPixel.piece.studDims}
+                  </span>
+                  <span className="text-slate-300 font-mono">Part #{hoverPixel.piece.partId}</span>
+                  <span className="text-slate-400">({hoverPixel.piece.area} {hoverPixel.piece.area === 1 ? 'stud' : 'studs'})</span>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -456,9 +663,17 @@ export const MosaicCanvas: React.FC<MosaicCanvasProps> = ({
       {/* Footer Info Bar */}
       <div className="px-4 py-2 bg-slate-950/90 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-400">
         <div className="flex items-center gap-3">
-          <span>💡 Click any stud to highlight all matching pieces</span>
+          <span>💡 Click any stud to highlight matching color</span>
           <span className="hidden sm:inline text-slate-600">•</span>
           <span className="hidden sm:inline">Alt + Drag to pan</span>
+          {showOptimizedPieces && optimization && (
+            <>
+              <span className="hidden sm:inline text-slate-600">•</span>
+              <span className="text-amber-400 font-medium">
+                Consolidated: {optimization.totalPieces} parts ({optimization.reductionPercent}% fewer parts than 1×1)
+              </span>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-2 font-mono">
           <span>Dimensions: {(mosaic.width * 0.8).toFixed(1)}cm × {(mosaic.height * 0.8).toFixed(1)}cm</span>

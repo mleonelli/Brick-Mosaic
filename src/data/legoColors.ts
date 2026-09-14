@@ -541,6 +541,12 @@ export const PALETTE_PRESETS: {
     colorIds: OFFICIAL_LEGO_COLORS.map(c => c.id),
   },
   {
+    id: 'mosaic_maker',
+    name: 'Mosaic Maker',
+    description: 'White, Light Grey, Dark Grey, Black & Yellow (official 5-color set 40179 palette)',
+    colorIds: ['white', 'light_bluish_gray', 'dark_bluish_gray', 'black', 'yellow'],
+  },
+  {
     id: 'grayscale',
     name: 'Official Lego Art Monochrome',
     description: 'Black, Dark Stone Grey, Medium Stone Grey & White (classic film noir)',

@@ -32,7 +32,57 @@ export interface BaseplatePreset {
   physicalSizeCm: string;
 }
 
-export type PalettePresetKey = 'all' | 'grayscale' | 'vintage' | 'vibrant' | 'nature' | 'custom';
+export type PalettePresetKey = 'all' | 'mosaic_maker' | 'grayscale' | 'vintage' | 'vibrant' | 'nature' | 'custom';
+
+export type PieceFamily = 'tile' | 'plate';
+export type PieceSizePreference = 'bigger' | 'medium' | 'smaller';
+
+export interface PlacedPiece {
+  id: string;
+  x: number; // grid col (0 to width-1)
+  y: number; // grid row (0 to height-1)
+  width: number; // in studs
+  height: number; // in studs
+  color: LegoColor;
+  family: PieceFamily;
+  partId: string;
+  partName: string;
+  studDims: string; // e.g. "2x2", "2x3", "2x4"
+  area: number; // width * height
+}
+
+export interface OptimizationPieceTypeCount {
+  studDims: string;
+  partId: string;
+  partName: string;
+  family: PieceFamily;
+  count: number;
+  area: number;
+  colorBreakdown: { color: LegoColor; count: number }[];
+}
+
+export interface OptimizationSummary {
+  pieces: PlacedPiece[];
+  pieceGrid: (PlacedPiece | null)[][];
+  totalPieces: number;
+  originalDots: number;
+  reductionPercent: number;
+  family: PieceFamily;
+  sizePreference: PieceSizePreference;
+  countsByPieceType: OptimizationPieceTypeCount[];
+  countsByPieceAndColor: Map<
+    string,
+    {
+      key: string;
+      partId: string;
+      partName: string;
+      studDims: string;
+      family: PieceFamily;
+      color: LegoColor;
+      count: number;
+    }
+  >;
+}
 
 export interface MosaicSettings {
   baseplatePresetId: string;
@@ -56,6 +106,10 @@ export interface MosaicSettings {
   offsetX: number;     // -50% to +50%
   offsetY: number;     // -50% to +50%
   zoom: number;        // 1 to 3
+  // Multi-stud piece coverage settings
+  enableOptimization: boolean;
+  optimizationFamily: PieceFamily;
+  pieceSizePreference: PieceSizePreference;
 }
 
 export interface MosaicPixel {
@@ -81,3 +135,22 @@ export interface BrickLinkPartItem {
   quantityWithBuffer: number;
   estimatedCost: number;
 }
+
+export interface LegoMosaicProject {
+  format: 'lego-mosaic-studio';
+  version: number;
+  name: string;
+  createdAt: string;
+  settings: MosaicSettings;
+  image: {
+    name: string;
+    dataUrl?: string;
+    width?: number;
+    height?: number;
+  };
+  metadata?: {
+    totalDots?: number;
+    dimensions?: { width: number; height: number };
+  };
+}
+

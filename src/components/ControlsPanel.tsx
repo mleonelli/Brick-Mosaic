@@ -13,8 +13,19 @@ import {
   Hash,
   Wand2,
   ShieldCheck,
+  Box,
+  RefreshCw,
 } from 'lucide-react';
-import { DotShape, DitherMode, LegoColor, MosaicSettings, PalettePresetKey } from '../types';
+import {
+  DotShape,
+  DitherMode,
+  LegoColor,
+  MosaicSettings,
+  PalettePresetKey,
+  PieceFamily,
+  PieceSizePreference,
+  OptimizationSummary,
+} from '../types';
 import { OFFICIAL_BASEPLATES } from '../data/baseplates';
 import { OFFICIAL_LEGO_COLORS, PALETTE_PRESETS } from '../data/legoColors';
 
@@ -24,6 +35,8 @@ interface ControlsPanelProps {
   highlightedColorId: string | null;
   onHighlightColor: (colorId: string | null) => void;
   uniqueColorsInMosaic: LegoColor[];
+  optimization?: OptimizationSummary | null;
+  onRelaunchOptimization?: () => void;
 }
 
 export const ControlsPanel: React.FC<ControlsPanelProps> = ({
@@ -32,8 +45,11 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
   highlightedColorId,
   onHighlightColor,
   uniqueColorsInMosaic,
+  optimization,
+  onRelaunchOptimization,
 }) => {
   const [activeTab, setActiveTab] = useState<'base' | 'palette' | 'style'>('base');
+  const [isRelaunching, setIsRelaunching] = useState(false);
 
   const currentPreset = OFFICIAL_BASEPLATES.find((p) => p.id === settings.baseplatePresetId);
 
@@ -54,7 +70,7 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
       onUpdateSettings({
         palettePreset: presetKey,
         selectedColorIds: preset.colorIds,
-        maxColors: Math.min(settings.maxColors, preset.colorIds.length),
+        maxColors: preset.colorIds.length <= 16 ? preset.colorIds.length : Math.min(settings.maxColors, preset.colorIds.length),
       });
     }
   };
@@ -408,10 +424,214 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
         {/* ================= TAB 3: STYLE & OPTICS ================= */}
         {activeTab === 'style' && (
           <div className="space-y-5">
+            {/* Multi-Piece Area Coverage (Tiles & Plates Consolidation) - Placed ON TOP of Dot Shape */}
+            <div className="bg-gradient-to-br from-amber-500/10 via-slate-950 to-slate-900 border border-amber-500/30 rounded-2xl p-4 shadow-lg space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <Box className="w-4 h-4 text-amber-400" />
+                    <span className="text-xs font-bold text-slate-100 uppercase tracking-wider">
+                      Multi-Piece Area Coverage
+                    </span>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded font-bold bg-amber-400 text-slate-950 uppercase">
+                      New
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-snug">
+                    Calculates which larger square and rectangular pieces (2×2, 2×3, 2×4, etc.) cover contiguous color areas to reduce piece count and speed up assembly.
+                  </p>
+                </div>
+
+                <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-0.5">
+                  <input
+                    id="enable-optimization-toggle"
+                    type="checkbox"
+                    checked={settings.enableOptimization ?? false}
+                    onChange={(e) => onUpdateSettings({ enableOptimization: e.target.checked })}
+                    className="sr-only peer"
+                  />
+                  <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
+                </label>
+              </div>
+
+              {settings.enableOptimization && (
+                <div className="space-y-3.5 pt-1 border-t border-slate-800/80">
+                  {/* Family Selection: Tiles vs Plates (Strict constraint: do not mix tiles with plates) */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-slate-200">
+                        Piece Part Type
+                      </span>
+                      <span className="text-[10px] text-amber-400/90 font-mono">
+                        Do not mix tiles with plates
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        id="opt-family-tile-btn"
+                        type="button"
+                        onClick={() => onUpdateSettings({ optimizationFamily: 'tile' })}
+                        className={`p-2.5 rounded-xl border text-left transition ${
+                          settings.optimizationFamily === 'tile'
+                            ? 'border-amber-400 bg-amber-500/20 text-white ring-1 ring-amber-400/50'
+                            : 'border-slate-800 bg-slate-950/60 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-100">Smooth Tiles</span>
+                          {settings.optimizationFamily === 'tile' && (
+                            <Check className="w-3.5 h-3.5 text-amber-400" />
+                          )}
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-0.5 leading-tight">
+                          2×4, 2×3, 2×2, 1×4, 1×3, 1×2 & 1×1 flat tiles with grooved border
+                        </p>
+                      </button>
+
+                      <button
+                        id="opt-family-plate-btn"
+                        type="button"
+                        onClick={() => onUpdateSettings({ optimizationFamily: 'plate' })}
+                        className={`p-2.5 rounded-xl border text-left transition ${
+                          settings.optimizationFamily === 'plate'
+                            ? 'border-amber-400 bg-amber-500/20 text-white ring-1 ring-amber-400/50'
+                            : 'border-slate-800 bg-slate-950/60 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-100">Studded Plates</span>
+                          {settings.optimizationFamily === 'plate' && (
+                            <Check className="w-3.5 h-3.5 text-amber-400" />
+                          )}
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-0.5 leading-tight">
+                          2×4, 2×3, 2×2, 1×4, 1×3, 1×2 & 1×1 classic plates with Lego studs
+                        </p>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Size Preference Setting: Bigger vs Smaller Pieces */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-slate-200">
+                        Piece Size Preference
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        Relaunches calculation
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {[
+                        {
+                          id: 'bigger',
+                          label: 'Bigger Pieces',
+                          sub: 'Max 2×4, 2×3, 2×2',
+                          desc: 'Fewest total parts',
+                        },
+                        {
+                          id: 'medium',
+                          label: 'Medium Mix',
+                          sub: 'Up to 2×3, 2×2',
+                          desc: 'Balanced masonry',
+                        },
+                        {
+                          id: 'smaller',
+                          label: 'Smaller Pieces',
+                          sub: 'Max 2×2 squares',
+                          desc: 'Modular detail',
+                        },
+                      ].map((item) => {
+                        const isSelected = (settings.pieceSizePreference ?? 'bigger') === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            id={`opt-size-${item.id}-btn`}
+                            type="button"
+                            onClick={() => {
+                              onUpdateSettings({ pieceSizePreference: item.id as PieceSizePreference });
+                              if (onRelaunchOptimization) onRelaunchOptimization();
+                            }}
+                            className={`p-2 rounded-xl border text-left transition flex flex-col justify-between ${
+                              isSelected
+                                ? 'border-amber-400 bg-amber-500/20 text-white ring-1 ring-amber-400/40'
+                                : 'border-slate-800 bg-slate-950/60 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                            }`}
+                          >
+                            <span className="text-xs font-bold block">{item.label}</span>
+                            <span className="text-[9px] text-amber-300 font-mono mt-0.5">{item.sub}</span>
+                            <span className="text-[9px] text-slate-500">{item.desc}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Relaunch Calculation Action Button */}
+                  <div className="flex items-center justify-between pt-1 gap-2">
+                    <button
+                      id="relaunch-optimization-btn"
+                      type="button"
+                      onClick={() => {
+                        setIsRelaunching(true);
+                        if (onRelaunchOptimization) {
+                          onRelaunchOptimization();
+                        } else {
+                          // Trigger re-render with updated timestamp or state
+                          onUpdateSettings({
+                            pieceSizePreference: settings.pieceSizePreference || 'bigger',
+                          });
+                        }
+                        setTimeout(() => setIsRelaunching(false), 600);
+                      }}
+                      className="flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-md shadow-amber-500/20 transition active:scale-[0.99]"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isRelaunching ? 'animate-spin' : ''}`} />
+                      <span>{isRelaunching ? 'Recalculating Coverage...' : 'Relaunch Piece Calculation'}</span>
+                    </button>
+                  </div>
+
+                  {/* Optimization Results Live Metric */}
+                  {optimization && (
+                    <div className="bg-slate-950/80 rounded-xl p-2.5 border border-slate-800 text-[11px] space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Total Parts:</span>
+                        <div className="flex items-center gap-1.5 font-mono">
+                          <span className="line-through text-slate-500 text-[10px]">
+                            {optimization.originalDots.toLocaleString()} studs
+                          </span>
+                          <span className="text-emerald-400 font-bold">
+                            {optimization.totalPieces.toLocaleString()} pieces
+                          </span>
+                          <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 text-[9px] font-bold">
+                            -{optimization.reductionPercent}%
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Top piece shapes breakdown chips */}
+                      <div className="flex flex-wrap gap-1 pt-1 border-t border-slate-800/60">
+                        {optimization.countsByPieceType.slice(0, 5).map((t) => (
+                          <span
+                            key={t.studDims}
+                            className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-[10px] text-slate-300 font-mono"
+                          >
+                            {t.studDims}: <strong className="text-amber-300">×{t.count}</strong>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* 1x1 Dot Shape */}
             <div>
               <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block mb-2">
-                1×1 Dot Shape & Part Type
+                1×1 Dot Shape & Part Type {settings.enableOptimization && <span className="text-slate-500 font-normal lowercase">(for single studs)</span>}
               </label>
               <div className="grid grid-cols-2 gap-2">
                 {[

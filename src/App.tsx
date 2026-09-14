@@ -1,41 +1,21 @@
-import React, { useState, useEffect, useCallback, useTransition } from 'react';
+import React, { useState, useEffect, useCallback, useTransition, useMemo } from 'react';
 import { Header } from './components/Header';
 import { ImageUploader } from './components/ImageUploader';
 import { MosaicCanvas } from './components/MosaicCanvas';
 import { ControlsPanel } from './components/ControlsPanel';
 import { PartListModal } from './components/PartListModal';
 import { PdfModal } from './components/PdfModal';
+import { ProjectModal } from './components/ProjectModal';
 import { LegoColor, MosaicData, MosaicSettings } from './types';
 import { OFFICIAL_BASEPLATES } from './data/baseplates';
 import { OFFICIAL_LEGO_COLORS } from './data/legoColors';
 import { SAMPLE_IMAGES } from './data/sampleImages';
+import { DEFAULT_SETTINGS } from './data/defaultSettings';
 import { generateMosaicFromImage } from './utils/colorMatcher';
 import { getLegoPartNumber } from './utils/bricklinkExport';
-import { Sparkles, ShoppingBag, BookOpen, Layers, Check } from 'lucide-react';
-
-const DEFAULT_SETTINGS: MosaicSettings = {
-  baseplatePresetId: '48x48',
-  width: 48,
-  height: 48,
-  dotShape: 'round_tile',
-  ditherMode: 'lego_mosaic',
-  ditherStrength: 65,
-  sharpness: 35,
-  cleanOrphans: true,
-  maxColors: 16,
-  palettePreset: 'all',
-  selectedColorIds: OFFICIAL_LEGO_COLORS.map((c) => c.id),
-  brightness: 0,
-  contrast: 5,
-  saturation: 10,
-  showGrid: false,
-  showSubplates: true,
-  showSymbols: false,
-  scaleMode: 'cover',
-  offsetX: 0,
-  offsetY: 0,
-  zoom: 1,
-};
+import { importProject } from './utils/projectManager';
+import { calculatePieceOptimization } from './utils/pieceOptimizer';
+import { Sparkles, ShoppingBag, BookOpen, Layers, Check, FolderDown, CheckCircle2 } from 'lucide-react';
 
 export default function App() {
   const [settings, setSettings] = useState<MosaicSettings>(DEFAULT_SETTINGS);
@@ -43,12 +23,30 @@ export default function App() {
   const [imageName, setImageName] = useState<string>('Mona Lisa');
   const [mosaicData, setMosaicData] = useState<MosaicData | null>(null);
   const [highlightedColorId, setHighlightedColorId] = useState<string | null>(null);
+  const [optimizationNonce, setOptimizationNonce] = useState(0);
 
   // Modals
   const [isBrickLinkOpen, setIsBrickLinkOpen] = useState(false);
   const [isPdfOpen, setIsPdfOpen] = useState(false);
+  const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
+  const [projectModalTab, setProjectModalTab] = useState<'export' | 'import'>('export');
+  const [projectToast, setProjectToast] = useState<string | null>(null);
 
   const [, startTransition] = useTransition();
+
+  // Multi-piece optimization calculation (tiles/plates covering bigger areas like 2x2, 2x3, 2x4)
+  const optimizationSummary = useMemo(() => {
+    if (!mosaicData) return null;
+    return calculatePieceOptimization(
+      mosaicData,
+      settings.optimizationFamily || 'tile',
+      settings.pieceSizePreference || 'bigger'
+    );
+  }, [mosaicData, settings.optimizationFamily, settings.pieceSizePreference, optimizationNonce]);
+
+  const handleRelaunchOptimization = useCallback(() => {
+    setOptimizationNonce((n) => n + 1);
+  }, []);
 
   // Load initial sample image on mount so user sees a working Lego mosaic immediately!
   useEffect(() => {
@@ -129,6 +127,36 @@ export default function App() {
     setSettings(DEFAULT_SETTINGS);
   };
 
+  const handleOpenProjectModal = useCallback((tab: 'export' | 'import' = 'export') => {
+    setProjectModalTab(tab);
+    setIsProjectModalOpen(true);
+  }, []);
+
+  const handleImportSuccess = useCallback((restored: {
+    settings: MosaicSettings;
+    imageElement: HTMLImageElement | null;
+    imageName: string;
+  }) => {
+    setSettings(restored.settings);
+    setImageName(restored.imageName);
+    if (restored.imageElement) {
+      setImageElement(restored.imageElement);
+    }
+    setProjectToast(`Project "${restored.imageName}" loaded successfully!`);
+    setTimeout(() => {
+      setProjectToast(null);
+    }, 4500);
+  }, []);
+
+  const handleDirectFileImport = useCallback(async (file: File) => {
+    try {
+      const restored = await importProject(file);
+      handleImportSuccess(restored);
+    } catch (err: any) {
+      alert(err?.message || 'Could not load project file.');
+    }
+  }, [handleImportSuccess]);
+
   const currentPreset = OFFICIAL_BASEPLATES.find((p) => p.id === settings.baseplatePresetId);
 
   return (
@@ -139,9 +167,18 @@ export default function App() {
         currentPreset={currentPreset}
         onOpenPdf={() => setIsPdfOpen(true)}
         onOpenBricklink={() => setIsBrickLinkOpen(true)}
+        onOpenProjectModal={handleOpenProjectModal}
         onExportPng={handleExportPng}
         onResetSettings={handleResetSettings}
       />
+
+      {/* Floating Project Toast Notification */}
+      {projectToast && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900/95 border border-emerald-500/40 text-emerald-300 px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-2.5 text-xs font-semibold backdrop-blur-md animate-in slide-in-from-bottom-3 duration-300">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{projectToast}</span>
+        </div>
+      )}
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
@@ -152,6 +189,8 @@ export default function App() {
             <ImageUploader
               onImageSelect={handleImageSelect}
               currentImageName={imageName}
+              onOpenProjectModal={handleOpenProjectModal}
+              onImportFile={handleDirectFileImport}
             />
 
             {/* Interactive Mosaic Canvas */}
@@ -160,6 +199,7 @@ export default function App() {
               settings={settings}
               highlightedColorId={highlightedColorId}
               onHighlightColor={setHighlightedColorId}
+              optimization={optimizationSummary}
             />
 
             {/* Active Color Palette Bar (clickable to isolate colors) */}
@@ -234,6 +274,8 @@ export default function App() {
                 highlightedColorId={highlightedColorId}
                 onHighlightColor={setHighlightedColorId}
                 uniqueColorsInMosaic={mosaicData?.uniqueColors || []}
+                optimization={optimizationSummary}
+                onRelaunchOptimization={handleRelaunchOptimization}
               />
 
               {/* Quick Export Summary Card */}
@@ -246,9 +288,20 @@ export default function App() {
                         Ready to Build?
                       </h4>
                     </div>
-                    <span className="text-xs font-mono text-emerald-400 font-bold">
-                      {mosaicData.totalDots.toLocaleString()} Total Dots
-                    </span>
+                    {settings.enableOptimization && optimizationSummary ? (
+                      <div className="text-right">
+                        <span className="text-xs font-mono text-emerald-400 font-bold block">
+                          {optimizationSummary.totalPieces.toLocaleString()} Pieces
+                        </span>
+                        <span className="text-[10px] text-emerald-500/90 font-mono">
+                          -{optimizationSummary.reductionPercent}% fewer parts
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="text-xs font-mono text-emerald-400 font-bold">
+                        {mosaicData.totalDots.toLocaleString()} Total Dots
+                      </span>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
@@ -272,10 +325,20 @@ export default function App() {
                       <ShoppingBag className="w-5 h-5 text-sky-400 mb-1 group-hover:scale-110 transition-transform" />
                       <span>BrickLink Parts List</span>
                       <span className="text-[10px] text-slate-400 font-normal mt-0.5">
-                        Instant 1-click order
+                        {settings.enableOptimization ? 'Consolidated pieces' : 'Instant 1-click order'}
                       </span>
                     </button>
                   </div>
+
+                  <button
+                    id="quick-save-project-btn"
+                    onClick={() => handleOpenProjectModal('export')}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-slate-800/90 hover:bg-slate-700/90 text-slate-200 hover:text-white font-semibold text-xs border border-slate-700/80 hover:border-amber-500/50 transition shadow-sm"
+                    title="Export your project (.brickmosaic) with embedded original picture to continue editing anytime"
+                  >
+                    <FolderDown className="w-4 h-4 text-amber-400" />
+                    <span>Save Project File (.brickmosaic)</span>
+                  </button>
                 </div>
               )}
             </div>
@@ -283,12 +346,26 @@ export default function App() {
         </div>
       </main>
 
+      {/* Project Export/Import File Modal */}
+      <ProjectModal
+        isOpen={isProjectModalOpen}
+        onClose={() => setIsProjectModalOpen(false)}
+        settings={settings}
+        imageElement={imageElement}
+        imageName={imageName}
+        mosaic={mosaicData}
+        initialTab={projectModalTab}
+        onImportSuccess={handleImportSuccess}
+      />
+
       {/* BrickLink Parts List & Ordering Modal */}
       <PartListModal
         isOpen={isBrickLinkOpen}
         onClose={() => setIsBrickLinkOpen(false)}
         mosaic={mosaicData}
         dotShape={settings.dotShape}
+        optimization={optimizationSummary}
+        enableOptimization={settings.enableOptimization}
       />
 
       {/* Printable PDF Instruction Manual Modal */}

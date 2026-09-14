@@ -1,5 +1,5 @@
 import React from 'react';
-import { BookOpen, ShoppingBag, Download, Sparkles, RefreshCw, ZoomIn, ZoomOut, Layers } from 'lucide-react';
+import { BookOpen, ShoppingBag, Download, Sparkles, RefreshCw, ZoomIn, ZoomOut, Layers, FolderDown } from 'lucide-react';
 import { BaseplatePreset, MosaicData } from '../types';
 
 interface HeaderProps {
@@ -7,6 +7,7 @@ interface HeaderProps {
   currentPreset: BaseplatePreset | undefined;
   onOpenPdf: () => void;
   onOpenBricklink: () => void;
+  onOpenProjectModal: (tab: 'export' | 'import') => void;
   onExportPng: () => void;
   onResetSettings: () => void;
 }
@@ -16,6 +17,7 @@ export const Header: React.FC<HeaderProps> = ({
   currentPreset,
   onOpenPdf,
   onOpenBricklink,
+  onOpenProjectModal,
   onExportPng,
   onResetSettings,
 }) => {
@@ -63,6 +65,17 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
             </div>
           )}
+
+          {/* Project Export/Import Button */}
+          <button
+            id="open-project-btn"
+            onClick={() => onOpenProjectModal('export')}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 hover:border-slate-600 transition shadow-sm"
+            title="Save or load project (.brickmosaic) to continue working anytime"
+          >
+            <FolderDown className="w-4 h-4 text-amber-400" />
+            <span className="hidden xs:inline">Project</span>
+          </button>
 
           {/* BrickLink List Button */}
           <button

@@ -13,7 +13,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { DotShape, LegoColor, MosaicData } from '../types';
+import { DotShape, LegoColor, MosaicData, OptimizationSummary } from '../types';
 import {
   downloadFile,
   generateBrickLinkCsv,
@@ -21,12 +21,15 @@ import {
   getBaseplatePart,
   getLegoPartNumber,
 } from '../utils/bricklinkExport';
+import { Box, Grid } from 'lucide-react';
 
 interface PartListModalProps {
   isOpen: boolean;
   onClose: () => void;
   mosaic: MosaicData | null;
   dotShape: DotShape;
+  optimization?: OptimizationSummary | null;
+  enableOptimization?: boolean;
 }
 
 export const PartListModal: React.FC<PartListModalProps> = ({
@@ -34,14 +37,22 @@ export const PartListModal: React.FC<PartListModalProps> = ({
   onClose,
   mosaic,
   dotShape,
+  optimization,
+  enableOptimization = false,
 }) => {
   const [includeBuffer, setIncludeBuffer] = useState(true);
   const [bufferPercent, setBufferPercent] = useState(5);
   const [includeBaseplates, setIncludeBaseplates] = useState(true);
   const [copiedXml, setCopiedXml] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [partsViewMode, setPartsViewMode] = useState<'pieces' | 'dots'>(
+    enableOptimization && optimization ? 'pieces' : 'dots'
+  );
 
   if (!isOpen || !mosaic) return null;
+
+  const isUsingOptimization = partsViewMode === 'pieces' && !!optimization;
+  const activeOptimization = isUsingOptimization ? optimization : null;
 
   const { partId, partName } = getLegoPartNumber(dotShape);
   const baseplate = getBaseplatePart(mosaic.width, mosaic.height);
@@ -52,7 +63,8 @@ export const PartListModal: React.FC<PartListModalProps> = ({
     dotShape,
     includeBuffer,
     bufferPercent,
-    includeBaseplates
+    includeBaseplates,
+    activeOptimization
   );
 
   const handleCopyXml = async () => {
@@ -67,32 +79,46 @@ export const PartListModal: React.FC<PartListModalProps> = ({
   };
 
   const handleDownloadXml = () => {
-    downloadFile(xmlContent, `bricklink_wanted_list_${mosaic.width}x${mosaic.height}.xml`, 'application/xml');
+    const prefix = isUsingOptimization ? 'pieces' : 'dots';
+    downloadFile(xmlContent, `bricklink_${prefix}_list_${mosaic.width}x${mosaic.height}.xml`, 'application/xml');
   };
 
   const handleDownloadCsv = () => {
-    const csv = generateBrickLinkCsv(mosaic, dotShape, includeBuffer, bufferPercent);
-    downloadFile(csv, `bricklink_part_list_${mosaic.width}x${mosaic.height}.csv`, 'text/csv');
+    const prefix = isUsingOptimization ? 'pieces' : 'dots';
+    const csv = generateBrickLinkCsv(mosaic, dotShape, includeBuffer, bufferPercent, activeOptimization);
+    downloadFile(csv, `bricklink_${prefix}_list_${mosaic.width}x${mosaic.height}.csv`, 'text/csv');
   };
 
   // Calculate totals
-  let totalDotsCount = 0;
-  let totalBufferDotsCount = 0;
+  let totalPartsCount = 0;
+  let totalBufferPartsCount = 0;
   let estimatedTotalCost = 0;
 
-  for (const [, { count }] of mosaic.colorCounts.entries()) {
-    totalDotsCount += count;
-    const bufQty = includeBuffer ? Math.ceil(count * (1 + bufferPercent / 100)) : count;
-    totalBufferDotsCount += bufQty;
-    estimatedTotalCost += bufQty * 0.035; // Average $0.035 per 1x1 dot on Bricklink
+  if (isUsingOptimization && optimization) {
+    for (const [, item] of optimization.countsByPieceAndColor.entries()) {
+      totalPartsCount += item.count;
+      const bufQty = includeBuffer ? Math.ceil(item.count * (1 + bufferPercent / 100)) : item.count;
+      totalBufferPartsCount += bufQty;
+      const [wStr, hStr] = item.studDims.split('x');
+      const pieceArea = (parseInt(wStr, 10) || 1) * (parseInt(hStr, 10) || 1);
+      const unitPrice = Math.max(0.03, pieceArea * 0.025);
+      estimatedTotalCost += bufQty * unitPrice;
+    }
+  } else {
+    for (const [, { count }] of mosaic.colorCounts.entries()) {
+      totalPartsCount += count;
+      const bufQty = includeBuffer ? Math.ceil(count * (1 + bufferPercent / 100)) : count;
+      totalBufferPartsCount += bufQty;
+      estimatedTotalCost += bufQty * 0.035; // Average $0.035 per 1x1 dot on Bricklink
+    }
   }
 
   if (includeBaseplates && baseplate) {
     estimatedTotalCost += baseplate.count * 3.50; // ~$3.50 per 16x16 technic brick
   }
 
-  // Filtered colors for table
-  const items = Array.from<{ color: LegoColor; count: number }>(mosaic.colorCounts.values())
+  // Filtered colors/pieces for table
+  const dotItems = Array.from<{ color: LegoColor; count: number }>(mosaic.colorCounts.values())
     .filter(
       ({ color }) =>
         color.legoName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -100,6 +126,29 @@ export const PartListModal: React.FC<PartListModalProps> = ({
         color.bricklinkId.toString().includes(searchTerm)
     )
     .sort((a, b) => b.count - a.count);
+
+  interface PieceCountEntry {
+    key: string;
+    color: LegoColor;
+    studDims: string;
+    partId: string;
+    partName: string;
+    count: number;
+  }
+
+  const pieceItems: PieceCountEntry[] = optimization
+    ? (Array.from(optimization.countsByPieceAndColor.values()) as PieceCountEntry[])
+        .filter(
+          (item) =>
+            item.color.legoName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            item.color.bricklinkName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            item.color.bricklinkId.toString().includes(searchTerm) ||
+            item.studDims.includes(searchTerm) ||
+            item.partId.includes(searchTerm) ||
+            item.partName.toLowerCase().includes(searchTerm.toLowerCase())
+        )
+        .sort((a, b) => b.count - a.count)
+    : [];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
@@ -181,13 +230,54 @@ export const PartListModal: React.FC<PartListModalProps> = ({
             </div>
           </div>
 
+          {/* View Mode Toggle (Pieces vs 1x1 Dots) */}
+          {optimization && (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl bg-slate-950/80 border border-slate-800">
+              <div className="flex items-center gap-2">
+                <Box className="w-4 h-4 text-amber-400" />
+                <span className="text-xs font-bold text-slate-200">
+                  Part Consolidation Mode:
+                </span>
+                <span className="text-[11px] text-emerald-400 font-mono font-semibold">
+                  {optimization.reductionPercent}% fewer pieces with multi-stud {optimization.family === 'tile' ? 'tiles' : 'plates'}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 bg-slate-900 p-1 rounded-lg border border-slate-800 shrink-0">
+                <button
+                  id="part-mode-pieces-btn"
+                  onClick={() => setPartsViewMode('pieces')}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold transition ${
+                    partsViewMode === 'pieces'
+                      ? 'bg-amber-500 text-slate-950 shadow-sm font-bold'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Box className="w-3.5 h-3.5" />
+                  <span>Consolidated Pieces ({optimization.totalPieces.toLocaleString()})</span>
+                </button>
+                <button
+                  id="part-mode-dots-btn"
+                  onClick={() => setPartsViewMode('dots')}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold transition ${
+                    partsViewMode === 'dots'
+                      ? 'bg-amber-500 text-slate-950 shadow-sm font-bold'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Grid className="w-3.5 h-3.5" />
+                  <span>1×1 Dots ({mosaic.totalDots.toLocaleString()})</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Configuration Options */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-950/60 p-4 rounded-xl border border-slate-800">
             {/* Spares Buffer */}
             <div>
               <span className="font-bold text-slate-300 block mb-1">Spare Parts Buffer</span>
               <p className="text-[11px] text-slate-400 mb-2">
-                Adds extra 1×1 dots for accidental drops during assembly.
+                Adds extra pieces for accidental drops during assembly.
               </p>
               <div className="flex items-center gap-2">
                 <button
@@ -200,7 +290,7 @@ export const PartListModal: React.FC<PartListModalProps> = ({
                       : 'bg-slate-900 text-slate-400 border-slate-800'
                   }`}
                 >
-                  Exact ({totalDotsCount})
+                  Exact ({totalPartsCount})
                 </button>
                 <button
                   onClick={() => {
@@ -213,7 +303,7 @@ export const PartListModal: React.FC<PartListModalProps> = ({
                       : 'bg-slate-900 text-slate-400 border-slate-800'
                   }`}
                 >
-                  +5% Spares ({Math.ceil(totalDotsCount * 1.05)})
+                  +5% Spares ({Math.ceil(totalPartsCount * 1.05)})
                 </button>
                 <button
                   onClick={() => {
@@ -257,7 +347,9 @@ export const PartListModal: React.FC<PartListModalProps> = ({
                 </div>
               </div>
               <span className="text-[10px] text-slate-500 mt-1">
-                Based on avg $0.035/dot + baseplates across global BrickLink sellers
+                {isUsingOptimization
+                  ? `Based on market prices for multi-stud ${optimization?.family}s`
+                  : 'Based on avg $0.035/dot'} + baseplates across global BrickLink sellers
               </span>
             </div>
           </div>
@@ -305,45 +397,93 @@ export const PartListModal: React.FC<PartListModalProps> = ({
                     <th className="p-3">Color</th>
                     <th className="p-3">Official Lego Name</th>
                     <th className="p-3">BrickLink Color ID</th>
-                    <th className="p-3">Part ID</th>
+                    <th className="p-3">Part Type & ID</th>
                     <th className="p-3 text-right">Exact Qty</th>
                     <th className="p-3 text-right">Order Qty</th>
                     <th className="p-3 text-right">Est. Price</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-850 text-xs font-medium text-slate-300">
-                  {items.map(({ color, count }) => {
-                    const bufQty = includeBuffer
-                      ? Math.ceil(count * (1 + bufferPercent / 100))
-                      : count;
-                    const cost = (bufQty * 0.035).toFixed(2);
-                    return (
-                      <tr key={color.id} className="hover:bg-slate-900/50 transition">
-                        <td className="p-3">
-                          <div className="flex items-center gap-2">
-                            <div
-                              className="w-5 h-5 rounded-full border border-white/20 shadow-sm flex items-center justify-center text-[9px] font-bold"
-                              style={{ backgroundColor: color.hex, color: color.textColor }}
-                            >
-                              {color.symbol}
+                  {isUsingOptimization ? (
+                    pieceItems.map((item) => {
+                      const bufQty = includeBuffer
+                        ? Math.ceil(item.count * (1 + bufferPercent / 100))
+                        : item.count;
+                      const [wStr, hStr] = item.studDims.split('x');
+                      const pieceArea = (parseInt(wStr, 10) || 1) * (parseInt(hStr, 10) || 1);
+                      const unitPrice = Math.max(0.03, pieceArea * 0.025);
+                      const cost = (bufQty * unitPrice).toFixed(2);
+                      return (
+                        <tr key={item.key} className="hover:bg-slate-900/50 transition">
+                          <td className="p-3">
+                            <div className="flex items-center gap-2">
+                              <div
+                                className="w-5 h-5 rounded border border-white/20 shadow-sm flex items-center justify-center text-[9px] font-bold"
+                                style={{ backgroundColor: item.color.hex, color: item.color.textColor }}
+                              >
+                                {item.color.symbol}
+                              </div>
                             </div>
-                          </div>
-                        </td>
-                        <td className="p-3 font-semibold text-white">{color.legoName}</td>
-                        <td className="p-3 font-mono text-slate-400">
-                          #{color.bricklinkId} ({color.bricklinkName})
-                        </td>
-                        <td className="p-3 font-mono text-slate-400">
-                          {partId} ({partName})
-                        </td>
-                        <td className="p-3 text-right font-mono text-slate-400">{count}</td>
-                        <td className="p-3 text-right font-mono font-bold text-amber-300">
-                          {bufQty}
-                        </td>
-                        <td className="p-3 text-right font-mono text-emerald-400">${cost}</td>
-                      </tr>
-                    );
-                  })}
+                          </td>
+                          <td className="p-3 font-semibold text-white">{item.color.legoName}</td>
+                          <td className="p-3 font-mono text-slate-400">
+                            #{item.color.bricklinkId} ({item.color.bricklinkName})
+                          </td>
+                          <td className="p-3">
+                            <div className="flex items-center gap-1.5">
+                              <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-mono font-bold">
+                                {item.studDims}
+                              </span>
+                              <span className="font-mono text-slate-300">
+                                #{item.partId}
+                              </span>
+                              <span className="text-[11px] text-slate-400 truncate max-w-[140px]">
+                                {item.partName}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="p-3 text-right font-mono text-slate-400">{item.count}</td>
+                          <td className="p-3 text-right font-mono font-bold text-amber-300">
+                            {bufQty}
+                          </td>
+                          <td className="p-3 text-right font-mono text-emerald-400">${cost}</td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    dotItems.map(({ color, count }) => {
+                      const bufQty = includeBuffer
+                        ? Math.ceil(count * (1 + bufferPercent / 100))
+                        : count;
+                      const cost = (bufQty * 0.035).toFixed(2);
+                      return (
+                        <tr key={color.id} className="hover:bg-slate-900/50 transition">
+                          <td className="p-3">
+                            <div className="flex items-center gap-2">
+                              <div
+                                className="w-5 h-5 rounded-full border border-white/20 shadow-sm flex items-center justify-center text-[9px] font-bold"
+                                style={{ backgroundColor: color.hex, color: color.textColor }}
+                              >
+                                {color.symbol}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="p-3 font-semibold text-white">{color.legoName}</td>
+                          <td className="p-3 font-mono text-slate-400">
+                            #{color.bricklinkId} ({color.bricklinkName})
+                          </td>
+                          <td className="p-3 font-mono text-slate-400">
+                            {partId} ({partName})
+                          </td>
+                          <td className="p-3 text-right font-mono text-slate-400">{count}</td>
+                          <td className="p-3 text-right font-mono font-bold text-amber-300">
+                            {bufQty}
+                          </td>
+                          <td className="p-3 text-right font-mono text-emerald-400">${cost}</td>
+                        </tr>
+                      );
+                    })
+                  )}
 
                   {includeBaseplates && baseplate && (
                     <tr className="bg-sky-950/20 font-semibold">
@@ -375,8 +515,13 @@ export const PartListModal: React.FC<PartListModalProps> = ({
           <span className="text-slate-400">
             Total Parts to Order:{' '}
             <strong className="text-white">
-              {totalBufferDotsCount + (includeBaseplates && baseplate ? baseplate.count : 0)} pieces
+              {totalBufferPartsCount + (includeBaseplates && baseplate ? baseplate.count : 0)} pieces
             </strong>
+            {isUsingOptimization && optimization && (
+              <span className="ml-2 text-emerald-400 font-mono">
+                ({optimization.originalDots - totalPartsCount} fewer parts than 1×1 dots)
+              </span>
+            )}
           </span>
           <button
             onClick={onClose}

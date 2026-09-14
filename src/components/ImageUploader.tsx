@@ -1,22 +1,39 @@
 import React, { useState, useRef } from 'react';
-import { Upload, Image as ImageIcon, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Upload, Image as ImageIcon, Sparkles, CheckCircle2, FolderUp } from 'lucide-react';
 import { SAMPLE_IMAGES, SampleImage } from '../data/sampleImages';
 
 interface ImageUploaderProps {
   onImageSelect: (imageElement: HTMLImageElement, name: string) => void;
   currentImageName?: string;
+  onOpenProjectModal?: (tab: 'export' | 'import') => void;
+  onImportFile?: (file: File) => void;
 }
 
 export const ImageUploader: React.FC<ImageUploaderProps> = ({
   onImageSelect,
   currentImageName,
+  onOpenProjectModal,
+  onImportFile,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = (file: File) => {
+    // Check if user uploaded a saved .brickmosaic, .legomosaic, or .json project file
+    if (
+      file.name.endsWith('.brickmosaic') ||
+      file.name.endsWith('.legomosaic') ||
+      file.name.endsWith('.json') ||
+      file.type === 'application/json'
+    ) {
+      if (onImportFile) {
+        onImportFile(file);
+        return;
+      }
+    }
+
     if (!file.type.startsWith('image/')) {
-      alert('Please upload an image file (PNG, JPG, WEBP).');
+      alert('Please upload an image file (PNG, JPG, WEBP) or a .brickmosaic project file.');
       return;
     }
     const reader = new FileReader();
@@ -49,16 +66,31 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
-          <ImageIcon className="w-4 h-4 text-amber-400" />
-          Choose Picture
-        </h3>
-        {currentImageName && (
-          <span className="text-xs text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-2.5 py-1 rounded-full flex items-center gap-1.5 font-medium truncate max-w-[200px]">
-            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate">{currentImageName}</span>
-          </span>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+            <ImageIcon className="w-4 h-4 text-amber-400" />
+            Choose Picture
+          </h3>
+          {currentImageName && (
+            <span className="text-xs text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-2.5 py-0.5 rounded-full flex items-center gap-1.5 font-medium truncate max-w-[180px]">
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{currentImageName}</span>
+            </span>
+          )}
+        </div>
+
+        {onOpenProjectModal && (
+          <button
+            id="open-project-import-btn"
+            type="button"
+            onClick={() => onOpenProjectModal('import')}
+            className="flex items-center gap-1.5 text-xs text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 px-2.5 py-1 rounded-lg font-semibold transition"
+            title="Import an existing .brickmosaic file to continue editing"
+          >
+            <FolderUp className="w-3.5 h-3.5" />
+            <span>Load Saved Project</span>
+          </button>
         )}
       </div>
 
@@ -82,7 +114,7 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
           ref={fileInputRef}
           id="image-file-input"
           type="file"
-          accept="image/*"
+          accept="image/*,.brickmosaic,.legomosaic,.json"
           className="hidden"
           onChange={(e) => {
             if (e.target.files && e.target.files.length > 0) {
@@ -96,10 +128,10 @@ export const ImageUploader: React.FC<ImageUploaderProps> = ({
           </div>
           <div>
             <p className="text-sm font-semibold text-slate-200">
-              Click to upload or drag and drop
+              Click to upload photo or drag & drop here
             </p>
             <p className="text-xs text-slate-400 mt-0.5">
-              PNG, JPG, WEBP • Portraits, landscapes, album covers, pets
+              PNG, JPG, WEBP • or drop a <span className="text-amber-400 font-mono">.brickmosaic</span> project file
             </p>
           </div>
         </div>

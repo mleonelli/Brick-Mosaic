@@ -1,4 +1,4 @@
-import { DotShape, LegoColor, MosaicData } from '../types';
+import { DotShape, LegoColor, MosaicData, OptimizationSummary } from '../types';
 
 export function getLegoPartNumber(shape: DotShape): { partId: string; partName: string } {
   switch (shape) {
@@ -42,23 +42,40 @@ export function generateBrickLinkXml(
   dotShape: DotShape,
   includeBuffer: boolean = true,
   bufferPercentage: number = 5,
-  includeBaseplates: boolean = true
+  includeBaseplates: boolean = true,
+  optimization?: OptimizationSummary | null
 ): string {
-  const { partId } = getLegoPartNumber(dotShape);
   const items: string[] = [];
 
-  // 1x1 Dots
-  for (const [, { color, count }] of mosaic.colorCounts.entries()) {
-    const finalQty = includeBuffer
-      ? Math.ceil(count * (1 + bufferPercentage / 100))
-      : count;
+  if (optimization && optimization.countsByPieceAndColor.size > 0) {
+    // Multi-stud consolidated pieces export
+    for (const [, pieceItem] of optimization.countsByPieceAndColor.entries()) {
+      const finalQty = includeBuffer
+        ? Math.ceil(pieceItem.count * (1 + bufferPercentage / 100))
+        : pieceItem.count;
 
-    items.push(`  <ITEM>
+      items.push(`  <ITEM>
+    <ITEMTYPE>P</ITEMTYPE>
+    <ITEMID>${pieceItem.partId}</ITEMID>
+    <COLOR>${pieceItem.color.bricklinkId}</COLOR>
+    <MINQTY>${finalQty}</MINQTY>
+  </ITEM>`);
+    }
+  } else {
+    // Standard 1x1 Dots
+    const { partId } = getLegoPartNumber(dotShape);
+    for (const [, { color, count }] of mosaic.colorCounts.entries()) {
+      const finalQty = includeBuffer
+        ? Math.ceil(count * (1 + bufferPercentage / 100))
+        : count;
+
+      items.push(`  <ITEM>
     <ITEMTYPE>P</ITEMTYPE>
     <ITEMID>${partId}</ITEMID>
     <COLOR>${color.bricklinkId}</COLOR>
     <MINQTY>${finalQty}</MINQTY>
   </ITEM>`);
+    }
   }
 
   // Baseplates
@@ -84,20 +101,34 @@ export function generateBrickLinkCsv(
   mosaic: MosaicData,
   dotShape: DotShape,
   includeBuffer: boolean = true,
-  bufferPercentage: number = 5
+  bufferPercentage: number = 5,
+  optimization?: OptimizationSummary | null
 ): string {
-  const { partId, partName } = getLegoPartNumber(dotShape);
   const lines: string[] = [
     'Item Type,Part ID,Part Name,BrickLink Color ID,Color Name,Lego Color ID,Hex,Quantity,Buffer Qty,Est Cost (USD)'
   ];
 
-  for (const [, { color, count }] of mosaic.colorCounts.entries()) {
-    const bufferQty = includeBuffer ? Math.ceil(count * (1 + bufferPercentage / 100)) : count;
-    // Estimated average price per 1x1 dot on Bricklink is roughly $0.025 - $0.04
-    const estCost = (bufferQty * 0.035).toFixed(2);
-    lines.push(
-      `"P","${partId}","${partName}",${color.bricklinkId},"${color.bricklinkName}",${color.legoId},"${color.hex}",${count},${bufferQty},$${estCost}`
-    );
+  if (optimization && optimization.countsByPieceAndColor.size > 0) {
+    for (const [, pieceItem] of optimization.countsByPieceAndColor.entries()) {
+      const bufferQty = includeBuffer ? Math.ceil(pieceItem.count * (1 + bufferPercentage / 100)) : pieceItem.count;
+      // Estimate cost per piece by approximate size
+      const [wStr, hStr] = pieceItem.studDims.split('x');
+      const pieceArea = (parseInt(wStr, 10) || 1) * (parseInt(hStr, 10) || 1);
+      const estUnitPrice = Math.max(0.03, pieceArea * 0.025);
+      const estCost = (bufferQty * estUnitPrice).toFixed(2);
+      lines.push(
+        `"P","${pieceItem.partId}","${pieceItem.partName}",${pieceItem.color.bricklinkId},"${pieceItem.color.bricklinkName}",${pieceItem.color.legoId},"${pieceItem.color.hex}",${pieceItem.count},${bufferQty},$${estCost}`
+      );
+    }
+  } else {
+    const { partId, partName } = getLegoPartNumber(dotShape);
+    for (const [, { color, count }] of mosaic.colorCounts.entries()) {
+      const bufferQty = includeBuffer ? Math.ceil(count * (1 + bufferPercentage / 100)) : count;
+      const estCost = (bufferQty * 0.035).toFixed(2);
+      lines.push(
+        `"P","${partId}","${partName}",${color.bricklinkId},"${color.bricklinkName}",${color.legoId},"${color.hex}",${count},${bufferQty},$${estCost}`
+      );
+    }
   }
 
   const baseplate = getBaseplatePart(mosaic.width, mosaic.height);
