@@ -395,7 +395,7 @@ export const PartListModal: React.FC<PartListModalProps> = ({
                 <thead className="sticky top-0 bg-slate-950 border-b border-slate-800 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                   <tr>
                     <th className="p-3">Color</th>
-                    <th className="p-3">Official Lego Name</th>
+                    <th className="p-3">Official LEGO® Name</th>
                     <th className="p-3">BrickLink Color ID</th>
                     <th className="p-3">Part Type & ID</th>
                     <th className="p-3 text-right">Exact Qty</th>

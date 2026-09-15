@@ -6,7 +6,7 @@ import { ControlsPanel } from './components/ControlsPanel';
 import { PartListModal } from './components/PartListModal';
 import { PdfModal } from './components/PdfModal';
 import { ProjectModal } from './components/ProjectModal';
-import { LegoColor, MosaicData, MosaicSettings } from './types';
+import { LegoColor, MosaicData, MosaicSettings, SelectedPieceInfo } from './types';
 import { OFFICIAL_BASEPLATES } from './data/baseplates';
 import { OFFICIAL_LEGO_COLORS } from './data/legoColors';
 import { SAMPLE_IMAGES } from './data/sampleImages';
@@ -15,7 +15,9 @@ import { generateMosaicFromImage } from './utils/colorMatcher';
 import { getLegoPartNumber } from './utils/bricklinkExport';
 import { importProject } from './utils/projectManager';
 import { calculatePieceOptimization } from './utils/pieceOptimizer';
-import { Sparkles, ShoppingBag, BookOpen, Layers, Check, FolderDown, CheckCircle2 } from 'lucide-react';
+import { Sparkles, ShoppingBag, BookOpen, Layers, Check, FolderDown, CheckCircle2, Palette } from 'lucide-react';
+import { ColorPickerModal } from './components/ColorPickerModal';
+import { GuideModal } from './components/GuideModal';
 
 export default function App() {
   const [settings, setSettings] = useState<MosaicSettings>(DEFAULT_SETTINGS);
@@ -24,13 +26,16 @@ export default function App() {
   const [mosaicData, setMosaicData] = useState<MosaicData | null>(null);
   const [highlightedColorId, setHighlightedColorId] = useState<string | null>(null);
   const [optimizationNonce, setOptimizationNonce] = useState(0);
+  const [undoStack, setUndoStack] = useState<MosaicData[]>([]);
 
   // Modals
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [isBrickLinkOpen, setIsBrickLinkOpen] = useState(false);
   const [isPdfOpen, setIsPdfOpen] = useState(false);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [projectModalTab, setProjectModalTab] = useState<'export' | 'import'>('export');
   const [projectToast, setProjectToast] = useState<string | null>(null);
+  const [isReplaceColorModalOpen, setIsReplaceColorModalOpen] = useState(false);
 
   const [, startTransition] = useTransition();
 
@@ -43,6 +48,14 @@ export default function App() {
       settings.pieceSizePreference || 'bigger'
     );
   }, [mosaicData, settings.optimizationFamily, settings.pieceSizePreference, optimizationNonce]);
+
+  const imageDimensions = useMemo(() => {
+    if (!imageElement) return null;
+    return {
+      width: imageElement.naturalWidth || imageElement.width,
+      height: imageElement.naturalHeight || imageElement.height,
+    };
+  }, [imageElement]);
 
   const handleRelaunchOptimization = useCallback(() => {
     setOptimizationNonce((n) => n + 1);
@@ -81,7 +94,124 @@ export default function App() {
   const handleImageSelect = useCallback((img: HTMLImageElement, name: string) => {
     setImageElement(img);
     setImageName(name);
+    setUndoStack([]);
   }, []);
+
+  // Undo last color edit
+  const handleUndo = useCallback(() => {
+    setUndoStack((prev) => {
+      if (prev.length === 0) return prev;
+      const previousState = prev[prev.length - 1];
+      setMosaicData(previousState);
+      return prev.slice(0, -1);
+    });
+  }, []);
+
+  // Global Ctrl+Z / Cmd+Z shortcut for undo
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        if (undoStack.length > 0) {
+          e.preventDefault();
+          handleUndo();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [undoStack.length, handleUndo]);
+
+  // Update color of specific selected piece(s)
+  const handleUpdatePiecesColor = useCallback(
+    (piecesToUpdate: SelectedPieceInfo[], newColor: LegoColor) => {
+      setMosaicData((currentMosaic) => {
+        if (!currentMosaic) return null;
+        setUndoStack((prev) => [...prev.slice(-19), currentMosaic]);
+
+        const { width, height, pixels } = currentMosaic;
+        const newPixels = pixels.map((row) => [...row]);
+
+        for (const piece of piecesToUpdate) {
+          for (let dy = 0; dy < piece.height; dy++) {
+            for (let dx = 0; dx < piece.width; dx++) {
+              const y = piece.y + dy;
+              const x = piece.x + dx;
+              if (y >= 0 && y < height && x >= 0 && x < width) {
+                newPixels[y][x] = newColor;
+              }
+            }
+          }
+        }
+
+        // Recount colors
+        const colorCounts = new Map<string, { color: LegoColor; count: number }>();
+        for (let y = 0; y < height; y++) {
+          for (let x = 0; x < width; x++) {
+            const c = newPixels[y][x];
+            const existing = colorCounts.get(c.id);
+            if (existing) {
+              existing.count++;
+            } else {
+              colorCounts.set(c.id, { color: c, count: 1 });
+            }
+          }
+        }
+
+        const uniqueColors = Array.from(colorCounts.values())
+          .sort((a, b) => b.count - a.count)
+          .map((entry) => entry.color);
+
+        return {
+          ...currentMosaic,
+          pixels: newPixels,
+          colorCounts,
+          uniqueColors,
+        };
+      });
+    },
+    []
+  );
+
+  // Update all pieces of a specific color across the mosaic
+  const handleUpdateAllColorPieces = useCallback(
+    (targetColorId: string, newColor: LegoColor) => {
+      setMosaicData((currentMosaic) => {
+        if (!currentMosaic) return null;
+        setUndoStack((prev) => [...prev.slice(-19), currentMosaic]);
+
+        const { width, height, pixels } = currentMosaic;
+        const newPixels = pixels.map((row) =>
+          row.map((c) => (c.id === targetColorId ? newColor : c))
+        );
+
+        const colorCounts = new Map<string, { color: LegoColor; count: number }>();
+        for (let y = 0; y < height; y++) {
+          for (let x = 0; x < width; x++) {
+            const c = newPixels[y][x];
+            const existing = colorCounts.get(c.id);
+            if (existing) {
+              existing.count++;
+            } else {
+              colorCounts.set(c.id, { color: c, count: 1 });
+            }
+          }
+        }
+
+        const uniqueColors = Array.from(colorCounts.values())
+          .sort((a, b) => b.count - a.count)
+          .map((entry) => entry.color);
+
+        return {
+          ...currentMosaic,
+          pixels: newPixels,
+          colorCounts,
+          uniqueColors,
+        };
+      });
+      setHighlightedColorId(newColor.id);
+    },
+    []
+  );
 
   const handleExportPng = () => {
     if (!mosaicData) return;
@@ -118,7 +248,7 @@ export default function App() {
     }
 
     const link = document.createElement('a');
-    link.download = `${imageName.toLowerCase().replace(/[^a-z0-9]/g, '_')}_lego_mosaic_${width}x${height}.png`;
+    link.download = `${imageName.toLowerCase().replace(/[^a-z0-9]/g, '_')}_brick_mosaic_${width}x${height}.png`;
     link.href = exportCanvas.toDataURL('image/png');
     link.click();
   };
@@ -165,6 +295,7 @@ export default function App() {
       <Header
         mosaic={mosaicData}
         currentPreset={currentPreset}
+        onOpenGuide={() => setIsGuideOpen(true)}
         onOpenPdf={() => setIsPdfOpen(true)}
         onOpenBricklink={() => setIsBrickLinkOpen(true)}
         onOpenProjectModal={handleOpenProjectModal}
@@ -200,6 +331,11 @@ export default function App() {
               highlightedColorId={highlightedColorId}
               onHighlightColor={setHighlightedColorId}
               optimization={optimizationSummary}
+              onUpdatePiecesColor={handleUpdatePiecesColor}
+              onUpdateAllColorPieces={handleUpdateAllColorPieces}
+              onUndo={handleUndo}
+              canUndo={undoStack.length > 0}
+              onOpenGuide={() => setIsGuideOpen(true)}
             />
 
             {/* Active Color Palette Bar (clickable to isolate colors) */}
@@ -215,12 +351,23 @@ export default function App() {
                     </span>
                   </div>
                   {highlightedColorId && (
-                    <button
-                      onClick={() => setHighlightedColorId(null)}
-                      className="text-xs text-amber-400 hover:text-amber-300 font-semibold"
-                    >
-                      Clear isolation
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        id="change-active-color-btn"
+                        onClick={() => setIsReplaceColorModalOpen(true)}
+                        className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 transition shadow-sm"
+                        title="Change all pieces of this highlighted color via full LEGO® color picker"
+                      >
+                        <Palette className="w-3.5 h-3.5" />
+                        <span>Change Color ({mosaicData.colorCounts.get(highlightedColorId)?.count || 0})...</span>
+                      </button>
+                      <button
+                        onClick={() => setHighlightedColorId(null)}
+                        className="text-xs text-amber-400 hover:text-amber-300 font-semibold"
+                      >
+                        Clear isolation
+                      </button>
+                    </div>
                   )}
                 </div>
 
@@ -276,6 +423,7 @@ export default function App() {
                 uniqueColorsInMosaic={mosaicData?.uniqueColors || []}
                 optimization={optimizationSummary}
                 onRelaunchOptimization={handleRelaunchOptimization}
+                imageDimensions={imageDimensions}
               />
 
               {/* Quick Export Summary Card */}
@@ -375,6 +523,29 @@ export default function App() {
         mosaic={mosaicData}
         settings={settings}
         defaultProjectName={imageName}
+      />
+
+      {/* Full LEGO® Color Picker for Highlighted Color from Palette Bar */}
+      {highlightedColorId && (
+        <ColorPickerModal
+          isOpen={isReplaceColorModalOpen}
+          onClose={() => setIsReplaceColorModalOpen(false)}
+          onSelectColor={(newColor) => {
+            handleUpdateAllColorPieces(highlightedColorId, newColor);
+          }}
+          targetDescription={`all ${mosaicData?.colorCounts.get(highlightedColorId)?.count || 0} ${mosaicData?.uniqueColors.find((c) => c.id === highlightedColorId)?.legoName || ''} pieces`}
+          currentColor={mosaicData?.uniqueColors.find((c) => c.id === highlightedColorId)}
+          mosaicColors={mosaicData?.uniqueColors}
+          colorCounts={mosaicData?.colorCounts}
+        />
+      )}
+
+      {/* Comprehensive How-To Guide Modal */}
+      <GuideModal
+        isOpen={isGuideOpen}
+        onClose={() => setIsGuideOpen(false)}
+        onOpenPdf={() => setIsPdfOpen(true)}
+        onOpenBricklink={() => setIsBrickLinkOpen(true)}
       />
     </div>
   );

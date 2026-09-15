@@ -1,10 +1,11 @@
 import React from 'react';
-import { BookOpen, ShoppingBag, Download, Sparkles, RefreshCw, ZoomIn, ZoomOut, Layers, FolderDown } from 'lucide-react';
+import { BookOpen, ShoppingBag, Download, Sparkles, RefreshCw, ZoomIn, ZoomOut, Layers, FolderDown, HelpCircle } from 'lucide-react';
 import { BaseplatePreset, MosaicData } from '../types';
 
 interface HeaderProps {
   mosaic: MosaicData | null;
   currentPreset: BaseplatePreset | undefined;
+  onOpenGuide: () => void;
   onOpenPdf: () => void;
   onOpenBricklink: () => void;
   onOpenProjectModal: (tab: 'export' | 'import') => void;
@@ -15,6 +16,7 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   mosaic,
   currentPreset,
+  onOpenGuide,
   onOpenPdf,
   onOpenBricklink,
   onOpenProjectModal,
@@ -30,19 +32,19 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
               {/* Lego stud visual */}
               <div className="w-5 h-5 rounded-full bg-red-600 border-2 border-red-400 shadow-inner flex items-center justify-center">
-                <span className="text-[7px] font-black tracking-tighter text-white select-none">LEGO</span>
+                <span className="text-[6.5px] font-black tracking-tighter text-white select-none">LEGO®</span>
               </div>
             </div>
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-lg font-bold tracking-tight text-white">Lego Mosaic Studio</h1>
+              <h1 className="text-lg font-bold tracking-tight text-white">Brick Mosaic Studio</h1>
               <span className="hidden sm:inline-block px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-full">
                 1×1 Dots
               </span>
             </div>
             <p className="text-xs text-slate-400 hidden sm:block">
-              Official Lego palettes • Baseplates • Printable PDF Instructions • BrickLink Orders
+              Official LEGO® palettes • Baseplates • Printable PDF Instructions • BrickLink Orders
             </p>
           </div>
         </div>
@@ -65,6 +67,17 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
             </div>
           )}
+
+          {/* How-To Guide Button */}
+          <button
+            id="open-guide-btn"
+            onClick={onOpenGuide}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 hover:border-slate-600 transition shadow-sm"
+            title="Read comprehensive how-to guide for Brick Mosaic Studio"
+          >
+            <HelpCircle className="w-4 h-4 text-emerald-400" />
+            <span className="hidden xs:inline">Guide</span>
+          </button>
 
           {/* Project Export/Import Button */}
           <button
@@ -95,7 +108,7 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={onOpenPdf}
             disabled={!mosaic}
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-500 hover:to-amber-500 text-white shadow-md shadow-red-900/30 transition disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Export printable official Lego Art instruction booklet"
+            title="Export printable official LEGO® Art instruction booklet"
           >
             <BookOpen className="w-4 h-4" />
             <span>PDF Manual</span>

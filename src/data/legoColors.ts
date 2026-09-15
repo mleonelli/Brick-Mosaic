@@ -536,8 +536,8 @@ export const PALETTE_PRESETS: {
 }[] = [
   {
     id: 'all',
-    name: 'Full Lego Spectrum',
-    description: 'All 40 official Lego dot colors for maximum photorealism',
+    name: 'Full LEGO® Spectrum',
+    description: 'All 40 official LEGO® dot colors for maximum photorealism',
     colorIds: OFFICIAL_LEGO_COLORS.map(c => c.id),
   },
   {
@@ -548,7 +548,7 @@ export const PALETTE_PRESETS: {
   },
   {
     id: 'grayscale',
-    name: 'Official Lego Art Monochrome',
+    name: 'Official LEGO® Art Monochrome',
     description: 'Black, Dark Stone Grey, Medium Stone Grey & White (classic film noir)',
     colorIds: ['black', 'dark_bluish_gray', 'light_bluish_gray', 'white'],
   },

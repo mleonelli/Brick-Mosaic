@@ -42,7 +42,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
   initialTab = 'export',
 }) => {
   const [activeTab, setActiveTab] = useState<'export' | 'import'>(initialTab);
-  const [exportName, setExportName] = useState(imageName || 'My Lego Mosaic');
+  const [exportName, setExportName] = useState(imageName || 'My LEGO® Mosaic');
   const [embedImage, setEmbedImage] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -71,7 +71,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
   const handleExport = async () => {
     try {
       setIsExporting(true);
-      await exportProject(exportName.trim() || 'Lego Mosaic', settings, imageElement, embedImage);
+      await exportProject(exportName.trim() || 'LEGO® Mosaic', settings, imageElement, embedImage);
       setSuccessNotice('Project file downloaded successfully!');
       setTimeout(() => {
         setSuccessNotice(null);
@@ -127,7 +127,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
                 </span>
               </h2>
               <p className="text-xs text-slate-400">
-                Save your progress or load a previously exported Lego mosaic project
+                Save your progress or load a previously exported LEGO® mosaic project
               </p>
             </div>
           </div>

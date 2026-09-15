@@ -12,7 +12,7 @@ interface GeneratePdfOptions {
 export async function generateInstructionManualPdf({
   mosaic,
   settings,
-  projectName = 'Lego Art Mosaic',
+  projectName = 'LEGO® Art Mosaic',
   onProgress,
 }: GeneratePdfOptions): Promise<jsPDF> {
   const doc = new jsPDF({
@@ -73,7 +73,7 @@ export async function generateInstructionManualPdf({
   doc.setFontSize(11);
   doc.setTextColor(156, 163, 175);
   doc.text('OFFICIAL 1×1 DOT BUILDING INSTRUCTION MANUAL', 24, 36);
-  doc.text(`Designed for Lego Baseplate System • ${width} × ${height} Studs (${mosaic.totalDots.toLocaleString()} Dots)`, 24, 43);
+  doc.text(`Designed for LEGO® Baseplate System • ${width} × ${height} Studs (${mosaic.totalDots.toLocaleString()} Dots)`, 24, 43);
 
   // Full Mosaic Preview Image in Center/Right
   const maxImgW = 100;
@@ -107,9 +107,9 @@ export async function generateInstructionManualPdf({
     ['Canvas Dimensions', `${width} × ${height} studs (${(width * 0.8).toFixed(1)} × ${(height * 0.8).toFixed(1)} cm)`],
     ['Total 1×1 Dots', `${mosaic.totalDots.toLocaleString()} pieces`],
     ['Dot Element', `${getLegoPartNumber(settings.dotShape).partName} (Part #${getLegoPartNumber(settings.dotShape).partId})`],
-    ['Active Palette', `${mosaic.uniqueColors.length} official Lego colors`],
+    ['Active Palette', `${mosaic.uniqueColors.length} official LEGO® colors`],
     ['Subplate Assembly', `${totalPlates} section plates (${subPlatesX} wide × ${subPlatesY} tall)`],
-    ['Standard Baseplate', `${subSize} × ${subSize} Lego Art Technic Bricks (Part #65803)`],
+    ['Standard Baseplate', `${subSize} × ${subSize} LEGO® Art Technic Bricks (Part #65803)`],
   ];
 
   doc.setFontSize(9.5);
@@ -129,7 +129,7 @@ export async function generateInstructionManualPdf({
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(107, 114, 128);
-  doc.text('Generated with Lego Mosaic Studio • Compatible with official Lego baseplates & BrickLink parts ordering', 24, 198);
+  doc.text('Generated with Brick Mosaic Studio • Compatible with official LEGO® baseplates & BrickLink parts ordering', 24, 198);
 
   // ================= PAGE 2: COLOR INVENTORY & KEY =================
   onProgress?.(30, 'Generating parts inventory & color key...');
@@ -475,7 +475,7 @@ export async function generateInstructionManualPdf({
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.setTextColor(30, 64, 175);
-  doc.text('Official Lego Art Assembly Steps:', 36, tipY + 8);
+  doc.text('Official LEGO® Art Assembly Steps:', 36, tipY + 8);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);

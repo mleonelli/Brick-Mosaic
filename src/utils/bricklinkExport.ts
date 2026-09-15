@@ -16,17 +16,8 @@ export function getLegoPartNumber(shape: DotShape): { partId: string; partName: 
 }
 
 export function getBaseplatePart(width: number, height: number): { partId: string; partName: string; count: number; colorId: number } | null {
-  // If standard 48x48 or composed of 16x16 plates:
-  const subPlateSize = 16;
-  if (width % subPlateSize === 0 && height % subPlateSize === 0) {
-    const count = (width / subPlateSize) * (height / subPlateSize);
-    return {
-      partId: '65803',
-      partName: 'Brick, Modified 16 x 16 x 1 1/3 with Pin Holes (Art Technic Baseplate)',
-      count,
-      colorId: 11, // Black
-    };
-  } else if (width === 32 && height === 32) {
+  // Classic single 32x32 standard baseplate
+  if (width === 32 && height === 32) {
     return {
       partId: '3811',
       partName: 'Baseplate 32 x 32',
@@ -34,7 +25,19 @@ export function getBaseplatePart(width: number, height: number): { partId: strin
       colorId: 11, // Black
     };
   }
-  return null;
+
+  // LEGO® Art 16x16 modular Technic plates (#65803)
+  const subPlateSize = 16;
+  const plateCols = Math.max(1, Math.ceil(width / subPlateSize));
+  const plateRows = Math.max(1, Math.ceil(height / subPlateSize));
+  const count = plateCols * plateRows;
+
+  return {
+    partId: '65803',
+    partName: `Brick, Modified 16 x 16 x 1 1/3 with Pin Holes (${plateCols}×${plateRows} baseplate grid)`,
+    count,
+    colorId: 11, // Black
+  };
 }
 
 export function generateBrickLinkXml(
@@ -105,7 +108,7 @@ export function generateBrickLinkCsv(
   optimization?: OptimizationSummary | null
 ): string {
   const lines: string[] = [
-    'Item Type,Part ID,Part Name,BrickLink Color ID,Color Name,Lego Color ID,Hex,Quantity,Buffer Qty,Est Cost (USD)'
+    'Item Type,Part ID,Part Name,BrickLink Color ID,Color Name,LEGO® Color ID,Hex,Quantity,Buffer Qty,Est Cost (USD)'
   ];
 
   if (optimization && optimization.countsByPieceAndColor.size > 0) {

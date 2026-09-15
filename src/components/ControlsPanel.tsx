@@ -15,6 +15,13 @@ import {
   ShieldCheck,
   Box,
   RefreshCw,
+  Minus,
+  Plus,
+  Link2,
+  Link2Off,
+  Ratio,
+  SlidersHorizontal,
+  Info,
 } from 'lucide-react';
 import {
   DotShape,
@@ -37,6 +44,7 @@ interface ControlsPanelProps {
   uniqueColorsInMosaic: LegoColor[];
   optimization?: OptimizationSummary | null;
   onRelaunchOptimization?: () => void;
+  imageDimensions?: { width: number; height: number } | null;
 }
 
 export const ControlsPanel: React.FC<ControlsPanelProps> = ({
@@ -47,20 +55,118 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
   uniqueColorsInMosaic,
   optimization,
   onRelaunchOptimization,
+  imageDimensions,
 }) => {
   const [activeTab, setActiveTab] = useState<'base' | 'palette' | 'style'>('base');
   const [isRelaunching, setIsRelaunching] = useState(false);
 
-  const currentPreset = OFFICIAL_BASEPLATES.find((p) => p.id === settings.baseplatePresetId);
+  // Custom rows and columns controls on the baseplate
+  const [gridSizingMode, setGridSizingMode] = useState<'studs' | 'plates'>('studs');
+  const [isAspectLocked, setIsAspectLocked] = useState(false);
+  const [allowExpand, setAllowExpand] = useState(false);
+
+  const currentPreset = OFFICIAL_BASEPLATES.find((p) => p.id === settings.baseplatePresetId) || OFFICIAL_BASEPLATES[0];
+  const baseWidth = currentPreset.width;
+  const baseHeight = currentPreset.height;
+  const maxAllowedWidth = allowExpand ? 96 : baseWidth;
+  const maxAllowedHeight = allowExpand ? 96 : baseHeight;
+
+  const isFullBase = settings.width === baseWidth && settings.height === baseHeight;
+  const usedStuds = settings.width * settings.height;
+  const utilizationPct = Math.min(100, Math.round((usedStuds / currentPreset.totalStuds) * 100));
+
+  const subPlatesX = Math.ceil(settings.width / 16);
+  const subPlatesY = Math.ceil(settings.height / 16);
+  const totalSubPlates = subPlatesX * subPlatesY;
+  const physicalW = (settings.width * 0.8).toFixed(1);
+  const physicalH = (settings.height * 0.8).toFixed(1);
 
   const handlePresetSelect = (presetId: string) => {
     const preset = OFFICIAL_BASEPLATES.find((p) => p.id === presetId);
     if (preset) {
+      // By default all the base is used
       onUpdateSettings({
         baseplatePresetId: preset.id,
         width: preset.width,
         height: preset.height,
       });
+    }
+  };
+
+  const handleSetWidth = (newWidth: number) => {
+    const clampedW = Math.max(4, Math.min(maxAllowedWidth, Math.round(newWidth)));
+    if (isAspectLocked && settings.width > 0) {
+      const ratio = settings.height / settings.width;
+      const newH = Math.max(4, Math.min(maxAllowedHeight, Math.round(clampedW * ratio)));
+      onUpdateSettings({ width: clampedW, height: newH });
+    } else {
+      onUpdateSettings({ width: clampedW });
+    }
+  };
+
+  const handleSetHeight = (newHeight: number) => {
+    const clampedH = Math.max(4, Math.min(maxAllowedHeight, Math.round(newHeight)));
+    if (isAspectLocked && settings.height > 0) {
+      const ratio = settings.width / settings.height;
+      const newW = Math.max(4, Math.min(maxAllowedWidth, Math.round(clampedH * ratio)));
+      onUpdateSettings({ width: newW, height: clampedH });
+    } else {
+      onUpdateSettings({ height: clampedH });
+    }
+  };
+
+  const handleResetToFullBase = () => {
+    onUpdateSettings({
+      width: baseWidth,
+      height: baseHeight,
+    });
+  };
+
+  const handleMatchPhotoRatio = () => {
+    if (!imageDimensions || imageDimensions.width <= 0 || imageDimensions.height <= 0) return;
+    const aspect = imageDimensions.width / imageDimensions.height;
+    let targetW = baseWidth;
+    let targetH = Math.round(baseWidth / aspect);
+    if (targetH > baseHeight) {
+      targetH = baseHeight;
+      targetW = Math.round(baseHeight * aspect);
+    }
+    targetW = Math.max(4, Math.min(baseWidth, targetW));
+    targetH = Math.max(4, Math.min(baseHeight, targetH));
+    onUpdateSettings({ width: targetW, height: targetH });
+  };
+
+  const handleSetSquare = () => {
+    const maxSide = Math.min(baseWidth, baseHeight);
+    const side = Math.min(settings.width, settings.height, maxSide);
+    onUpdateSettings({ width: side, height: side });
+  };
+
+  const handlePlateStep = (axis: 'cols' | 'rows', delta: number) => {
+    if (axis === 'cols') {
+      const currentPlates = Math.max(1, Math.round(settings.width / 16));
+      const maxPlates = Math.max(1, Math.floor(maxAllowedWidth / 16));
+      const newPlates = Math.min(maxPlates, Math.max(1, currentPlates + delta));
+      const newWidth = newPlates * 16;
+      if (isAspectLocked && settings.width > 0) {
+        const ratio = settings.height / settings.width;
+        const newH = Math.max(16, Math.min(maxAllowedHeight, Math.round((newWidth * ratio) / 16) * 16));
+        onUpdateSettings({ width: newWidth, height: newH });
+      } else {
+        onUpdateSettings({ width: newWidth });
+      }
+    } else {
+      const currentPlates = Math.max(1, Math.round(settings.height / 16));
+      const maxPlates = Math.max(1, Math.floor(maxAllowedHeight / 16));
+      const newPlates = Math.min(maxPlates, Math.max(1, currentPlates + delta));
+      const newHeight = newPlates * 16;
+      if (isAspectLocked && settings.height > 0) {
+        const ratio = settings.width / settings.height;
+        const newW = Math.max(16, Math.min(maxAllowedWidth, Math.round((newHeight * ratio) / 16) * 16));
+        onUpdateSettings({ width: newW, height: newHeight });
+      } else {
+        onUpdateSettings({ height: newHeight });
+      }
     }
   };
 
@@ -154,7 +260,7 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
           <div className="space-y-5">
             <div>
               <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block mb-2">
-                Official Lego Baseplate Preset
+                Official LEGO® Baseplate Preset
               </label>
               <div className="grid grid-cols-2 gap-2">
                 {OFFICIAL_BASEPLATES.map((preset) => {
@@ -186,6 +292,447 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
                     </button>
                   );
                 })}
+              </div>
+            </div>
+
+            {/* ================= SMART ROWS & COLUMNS SECTION ================= */}
+            <div className="border-t border-slate-800 pt-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Maximize2 className="w-4 h-4 text-amber-400" />
+                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                    Plate Rows & Columns to Use
+                  </label>
+                </div>
+                {isFullBase ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
+                    <Check className="w-3 h-3" /> Full Base (100%)
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                    {utilizationPct}% Base Used
+                  </span>
+                )}
+              </div>
+
+              <p className="text-[11px] text-slate-400">
+                Define how many stud columns and rows to fill on the baseplate. By default, the entire baseplate is used.
+              </p>
+
+              {/* Visual Plate Schematic & Utilization Mini-Map */}
+              <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between text-[11px]">
+                  <div className="flex items-center gap-1.5 font-mono text-slate-300">
+                    <span className="text-amber-400 font-bold">{settings.width} cols</span>
+                    <span className="text-slate-500">×</span>
+                    <span className="text-amber-400 font-bold">{settings.height} rows</span>
+                    <span className="text-slate-500">({usedStuds.toLocaleString()} studs)</span>
+                  </div>
+                  <div className="font-mono text-[10px] text-slate-400">
+                    {physicalW} × {physicalH} cm
+                  </div>
+                </div>
+
+                {/* Interactive visual representation of plate */}
+                <div className="relative w-full h-24 bg-slate-900 rounded-lg border border-slate-800/80 flex items-center justify-center overflow-hidden p-2">
+                  {/* Subtle LEGO stud background pattern for physical plate */}
+                  <div
+                    className="absolute inset-0 opacity-15 pointer-events-none"
+                    style={{
+                      backgroundImage: 'radial-gradient(circle, #94a3b8 1px, transparent 1px)',
+                      backgroundSize: '8px 8px',
+                    }}
+                  />
+
+                  {/* Outer baseplate reference bounds */}
+                  <div
+                    className="relative border border-dashed border-slate-700 rounded flex items-center justify-center transition-all duration-300"
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      maxWidth: `${Math.min(100, (baseWidth / Math.max(baseWidth, baseHeight)) * 100)}%`,
+                      maxHeight: `${Math.min(100, (baseHeight / Math.max(baseWidth, baseHeight)) * 100)}%`,
+                    }}
+                  >
+                    {/* Active used studs area */}
+                    <div
+                      className="bg-amber-500/20 border-2 border-amber-400 rounded transition-all duration-300 flex flex-col items-center justify-center text-center shadow-lg shadow-amber-500/10"
+                      style={{
+                        width: `${Math.min(100, Math.max(12, (settings.width / baseWidth) * 100))}%`,
+                        height: `${Math.min(100, Math.max(12, (settings.height / baseHeight) * 100))}%`,
+                      }}
+                    >
+                      <span className="text-[10px] font-mono font-bold text-amber-300 leading-tight">
+                        {settings.width}×{settings.height}
+                      </span>
+                      <span className="text-[8px] text-amber-200/80 font-mono hidden sm:inline">
+                        {subPlatesX}×{subPlatesY} plates
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Subplate & physical summary */}
+                <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-400 pt-1 border-t border-slate-800/60 font-mono">
+                  <div>
+                    <span className="text-slate-500">Subplates: </span>
+                    <span className="text-slate-300 font-semibold">{totalSubPlates}× (16×16)</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-slate-500">Base capacity: </span>
+                    <span className="text-slate-300">{baseWidth}×{baseHeight} ({currentPreset.totalStuds})</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Smart Quick Action Chips */}
+              <div className="flex flex-wrap gap-1.5 items-center">
+                <button
+                  id="btn-full-base"
+                  type="button"
+                  onClick={handleResetToFullBase}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition flex items-center gap-1.5 ${
+                    isFullBase
+                      ? 'border-emerald-500 bg-emerald-500/20 text-emerald-300 shadow-sm'
+                      : 'border-slate-700 bg-slate-800/60 text-slate-300 hover:text-white hover:bg-slate-700'
+                  }`}
+                  title="Reset to use the entire baseplate"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Full Base ({baseWidth}×{baseHeight})</span>
+                </button>
+
+                {imageDimensions && (
+                  <button
+                    id="btn-match-photo-ratio"
+                    type="button"
+                    onClick={handleMatchPhotoRatio}
+                    className="px-2.5 py-1 rounded-lg text-xs font-semibold border border-slate-700 bg-slate-800/60 text-slate-300 hover:text-amber-300 hover:border-amber-500/50 hover:bg-slate-800 transition flex items-center gap-1.5"
+                    title="Calculate best rows and columns to fit your uploaded photo without cropping"
+                  >
+                    <Sparkles className="w-3 h-3 text-amber-400" />
+                    <span>Match Photo Ratio</span>
+                  </button>
+                )}
+
+                <button
+                  id="btn-set-square"
+                  type="button"
+                  onClick={handleSetSquare}
+                  className="px-2.5 py-1 rounded-lg text-xs font-semibold border border-slate-700 bg-slate-800/60 text-slate-300 hover:text-white hover:bg-slate-700 transition flex items-center gap-1.5"
+                  title="Set equal rows and columns (1:1 square)"
+                >
+                  <Ratio className="w-3 h-3 text-sky-400" />
+                  <span>Square (1:1)</span>
+                </button>
+
+                <button
+                  id="btn-lock-aspect"
+                  type="button"
+                  onClick={() => setIsAspectLocked(!isAspectLocked)}
+                  className={`px-2 py-1 rounded-lg text-xs font-semibold border transition flex items-center gap-1 ${
+                    isAspectLocked
+                      ? 'border-amber-500 bg-amber-500/20 text-amber-300'
+                      : 'border-slate-800 bg-slate-900/80 text-slate-400 hover:text-slate-200'
+                  }`}
+                  title={isAspectLocked ? 'Aspect ratio locked' : 'Lock aspect ratio when adjusting dimensions'}
+                >
+                  {isAspectLocked ? (
+                    <>
+                      <Link2 className="w-3 h-3 text-amber-400" />
+                      <span>Ratio Locked</span>
+                    </>
+                  ) : (
+                    <>
+                      <Link2Off className="w-3 h-3 text-slate-500" />
+                      <span>Lock Ratio</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Mode Switcher: By Studs vs By 16x16 Plates */}
+              <div className="grid grid-cols-2 bg-slate-950/80 p-1 rounded-xl border border-slate-800 text-xs">
+                <button
+                  id="mode-by-studs-btn"
+                  type="button"
+                  onClick={() => setGridSizingMode('studs')}
+                  className={`py-1.5 px-3 rounded-lg font-bold transition flex items-center justify-center gap-1.5 ${
+                    gridSizingMode === 'studs'
+                      ? 'bg-slate-800 text-amber-400 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                  <span>By Studs (Exact)</span>
+                </button>
+                <button
+                  id="mode-by-plates-btn"
+                  type="button"
+                  onClick={() => setGridSizingMode('plates')}
+                  className={`py-1.5 px-3 rounded-lg font-bold transition flex items-center justify-center gap-1.5 ${
+                    gridSizingMode === 'plates'
+                      ? 'bg-slate-800 text-amber-400 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Grid className="w-3.5 h-3.5" />
+                  <span>By 16×16 Plates</span>
+                </button>
+              </div>
+
+              {/* MODE A: BY STUDS */}
+              {gridSizingMode === 'studs' && (
+                <div className="space-y-4 p-3 rounded-xl bg-slate-950/40 border border-slate-800/80">
+                  {/* Columns (Width) */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-300 font-semibold">Columns (Width)</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-400 font-mono text-[11px]">
+                          {(settings.width * 0.8).toFixed(1)} cm
+                        </span>
+                        <span className="text-amber-400 font-mono font-bold px-2 py-0.5 rounded bg-slate-800 border border-slate-700">
+                          {settings.width} studs
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleSetWidth(settings.width - 16)}
+                        className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-[10px] font-mono font-semibold"
+                        title="-16 studs"
+                      >
+                        -16
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSetWidth(settings.width - 4)}
+                        className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-[10px] font-mono font-semibold"
+                        title="-4 studs"
+                      >
+                        -4
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSetWidth(settings.width - 1)}
+                        className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white"
+                        title="-1 stud"
+                      >
+                        <Minus className="w-3.5 h-3.5" />
+                      </button>
+
+                      <input
+                        id="slider-width-studs"
+                        type="range"
+                        min="8"
+                        max={maxAllowedWidth}
+                        step="1"
+                        value={settings.width}
+                        onChange={(e) => handleSetWidth(parseInt(e.target.value))}
+                        className="flex-1 accent-amber-500 cursor-pointer"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => handleSetWidth(settings.width + 1)}
+                        className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white"
+                        title="+1 stud"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSetWidth(settings.width + 4)}
+                        className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-[10px] font-mono font-semibold"
+                        title="+4 studs"
+                      >
+                        +4
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSetWidth(settings.width + 16)}
+                        className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-[10px] font-mono font-semibold"
+                        title="+16 studs"
+                      >
+                        +16
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Rows (Height) */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-300 font-semibold">Rows (Height)</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-400 font-mono text-[11px]">
+                          {(settings.height * 0.8).toFixed(1)} cm
+                        </span>
+                        <span className="text-amber-400 font-mono font-bold px-2 py-0.5 rounded bg-slate-800 border border-slate-700">
+                          {settings.height} studs
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleSetHeight(settings.height - 16)}
+                        className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-[10px] font-mono font-semibold"
+                        title="-16 studs"
+                      >
+                        -16
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSetHeight(settings.height - 4)}
+                        className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-[10px] font-mono font-semibold"
+                        title="-4 studs"
+                      >
+                        -4
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSetHeight(settings.height - 1)}
+                        className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white"
+                        title="-1 stud"
+                      >
+                        <Minus className="w-3.5 h-3.5" />
+                      </button>
+
+                      <input
+                        id="slider-height-studs"
+                        type="range"
+                        min="8"
+                        max={maxAllowedHeight}
+                        step="1"
+                        value={settings.height}
+                        onChange={(e) => handleSetHeight(parseInt(e.target.value))}
+                        className="flex-1 accent-amber-500 cursor-pointer"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => handleSetHeight(settings.height + 1)}
+                        className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white"
+                        title="+1 stud"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSetHeight(settings.height + 4)}
+                        className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-[10px] font-mono font-semibold"
+                        title="+4 studs"
+                      >
+                        +4
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSetHeight(settings.height + 16)}
+                        className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-[10px] font-mono font-semibold"
+                        title="+16 studs"
+                      >
+                        +16
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* MODE B: BY 16x16 PLATES */}
+              {gridSizingMode === 'plates' && (
+                <div className="space-y-3 p-3 rounded-xl bg-slate-950/40 border border-slate-800/80">
+                  <div className="text-[11px] text-slate-400 flex items-center gap-1.5">
+                    <Info className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span>Modular 16×16 plates (each plate is 16 studs = 12.8 cm)</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* Plate Columns */}
+                    <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 space-y-1.5">
+                      <div className="text-[11px] text-slate-300 font-semibold flex justify-between">
+                        <span>Plate Columns</span>
+                        <span className="text-amber-400 font-mono font-bold">{settings.width} studs</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handlePlateStep('cols', -1)}
+                          disabled={subPlatesX <= 1}
+                          className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white disabled:opacity-40 disabled:pointer-events-none"
+                        >
+                          <Minus className="w-3.5 h-3.5" />
+                        </button>
+                        <span className="font-mono text-xs font-bold text-white">
+                          {subPlatesX} {subPlatesX === 1 ? 'plate' : 'plates'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handlePlateStep('cols', 1)}
+                          disabled={subPlatesX >= Math.floor(maxAllowedWidth / 16)}
+                          className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white disabled:opacity-40 disabled:pointer-events-none"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Plate Rows */}
+                    <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 space-y-1.5">
+                      <div className="text-[11px] text-slate-300 font-semibold flex justify-between">
+                        <span>Plate Rows</span>
+                        <span className="text-amber-400 font-mono font-bold">{settings.height} studs</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handlePlateStep('rows', -1)}
+                          disabled={subPlatesY <= 1}
+                          className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white disabled:opacity-40 disabled:pointer-events-none"
+                        >
+                          <Minus className="w-3.5 h-3.5" />
+                        </button>
+                        <span className="font-mono text-xs font-bold text-white">
+                          {subPlatesY} {subPlatesY === 1 ? 'plate' : 'plates'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handlePlateStep('rows', 1)}
+                          disabled={subPlatesY >= Math.floor(maxAllowedHeight / 16)}
+                          className="p-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white disabled:opacity-40 disabled:pointer-events-none"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Expansion option */}
+              <div className="flex items-center justify-between pt-1 text-[11px] text-slate-400">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={allowExpand}
+                    onChange={(e) => setAllowExpand(e.target.checked)}
+                    className="accent-amber-500 rounded"
+                  />
+                  <span>Allow custom expansion beyond preset (up to 96 studs)</span>
+                </label>
+                {!isFullBase && (
+                  <button
+                    type="button"
+                    onClick={handleResetToFullBase}
+                    className="text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-1"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Reset to full base</span>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -302,7 +849,7 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 mb-2">
-                Fewer colors yield clean graphic Lego poster style; more colors give high photographic realism.
+                Fewer colors yield clean graphic LEGO® poster style; more colors give high photographic realism.
               </p>
               <input
                 id="max-colors-slider"
@@ -372,7 +919,7 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
             <div className="border-t border-slate-800 pt-4">
               <div className="flex items-center justify-between mb-2">
                 <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-                  Available Official Lego Colors ({settings.selectedColorIds.length})
+                  Available Official LEGO® Colors ({settings.selectedColorIds.length})
                 </label>
                 <div className="flex items-center gap-2">
                   <button
@@ -506,7 +1053,7 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
                           )}
                         </div>
                         <p className="text-[10px] text-slate-400 mt-0.5 leading-tight">
-                          2×4, 2×3, 2×2, 1×4, 1×3, 1×2 & 1×1 classic plates with Lego studs
+                          2×4, 2×3, 2×2, 1×4, 1×3, 1×2 & 1×1 classic plates with LEGO® studs
                         </p>
                       </button>
                     </div>
@@ -638,12 +1185,12 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
                   {
                     id: 'round_tile',
                     name: '1×1 Round Tile',
-                    desc: 'Smooth top (Part #98138, Official Lego Art)',
+                    desc: 'Smooth top (Part #98138, Official LEGO® Art)',
                   },
                   {
                     id: 'round_plate',
                     name: '1×1 Round Plate',
-                    desc: 'Classic stud with "LEGO" logo (Part #4073)',
+                    desc: 'Classic stud with "LEGO®" logo (Part #4073)',
                   },
                   {
                     id: 'square_tile',
@@ -900,7 +1447,7 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
 
               <label className="flex items-center justify-between p-2 rounded-xl bg-slate-950/40 border border-slate-800 cursor-pointer">
                 <span className="text-xs text-slate-300 font-medium">
-                  16×16 Subplate Boundaries (Lego Art Guide)
+                  16×16 Subplate Boundaries (LEGO® Art Guide)
                 </span>
                 <input
                   type="checkbox"

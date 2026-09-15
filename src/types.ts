@@ -136,6 +136,18 @@ export interface BrickLinkPartItem {
   estimatedCost: number;
 }
 
+export interface SelectedPieceInfo {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color: LegoColor;
+  studDims: string;
+  partName?: string;
+  partId?: string;
+}
+
 export interface LegoMosaicProject {
   format: 'lego-mosaic-studio';
   version: number;

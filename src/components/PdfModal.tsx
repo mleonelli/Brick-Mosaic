@@ -20,7 +20,7 @@ export const PdfModal: React.FC<PdfModalProps> = ({
   settings,
   defaultProjectName,
 }) => {
-  const [projectName, setProjectName] = useState(defaultProjectName || 'Lego Art Mosaic');
+  const [projectName, setProjectName] = useState(defaultProjectName || 'LEGO® Art Mosaic');
   const [isGenerating, setIsGenerating] = useState(false);
   const [progressPct, setProgressPct] = useState(0);
   const [statusMsg, setStatusMsg] = useState('');
@@ -87,7 +87,7 @@ export const PdfModal: React.FC<PdfModalProps> = ({
               <h2 className="text-base font-bold text-white flex items-center gap-2">
                 Printable PDF Instruction Manual
                 <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                  Lego Art Booklet
+                  LEGO® Art Booklet
                 </span>
               </h2>
               <p className="text-xs text-slate-400">

@@ -3,8 +3,8 @@ import { BaseplatePreset } from '../types';
 export const OFFICIAL_BASEPLATES: BaseplatePreset[] = [
   {
     id: '48x48',
-    name: '48 × 48 (Standard Lego Art)',
-    description: 'The official standard for Lego Art sets (e.g., Star Wars, Marilyn Monroe, Harry Potter). Composed of 9 interlocking 16×16 plates (3×3).',
+    name: '48 × 48 (Standard LEGO® Art)',
+    description: 'The official standard for LEGO® Art sets (e.g., Star Wars, Marilyn Monroe, Harry Potter). Composed of 9 interlocking 16×16 plates (3×3).',
     width: 48,
     height: 48,
     subPlateSize: 16,
@@ -14,7 +14,7 @@ export const OFFICIAL_BASEPLATES: BaseplatePreset[] = [
   {
     id: '32x32',
     name: '32 × 32 (Classic Baseplate)',
-    description: 'The ubiquitous classic Lego baseplate (Part #3811). Compact, affordable, and quick to build with 1,024 dots.',
+    description: 'The ubiquitous classic LEGO® baseplate (Part #3811). Compact, affordable, and quick to build with 1,024 dots.',
     width: 32,
     height: 32,
     subPlateSize: 16,
@@ -24,7 +24,7 @@ export const OFFICIAL_BASEPLATES: BaseplatePreset[] = [
   {
     id: '16x16',
     name: '16 × 16 (Mini Art Canvas)',
-    description: 'Single official Lego Art technic plate (Part #65803). Perfect for desktop badges, coasters, or quick gifts.',
+    description: 'Single official LEGO® Art technic plate (Part #65803). Perfect for desktop badges, coasters, or quick gifts.',
     width: 16,
     height: 16,
     subPlateSize: 16,
@@ -64,7 +64,7 @@ export const OFFICIAL_BASEPLATES: BaseplatePreset[] = [
   {
     id: '48x96',
     name: '48 × 96 (Epic Double-Height)',
-    description: 'Tall double-set Lego Art gallery piece (3×6 grid of 16×16 plates). As seen in combined Darth Vader or Batman builds.',
+    description: 'Tall double-set LEGO® Art gallery piece (3×6 grid of 16×16 plates). As seen in combined Darth Vader or Batman builds.',
     width: 48,
     height: 96,
     subPlateSize: 16,
