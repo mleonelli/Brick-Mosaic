@@ -418,7 +418,7 @@ export const PartListModal: React.FC<PartListModalProps> = ({
                           <td className="p-3">
                             <div className="flex items-center gap-2">
                               <div
-                                className="w-5 h-5 rounded border border-white/20 shadow-sm flex items-center justify-center text-[9px] font-bold"
+                                className="min-w-5 h-5 px-0.5 rounded border border-white/20 shadow-sm flex items-center justify-center text-[8px] font-bold"
                                 style={{ backgroundColor: item.color.hex, color: item.color.textColor }}
                               >
                                 {item.color.symbol}
@@ -461,7 +461,7 @@ export const PartListModal: React.FC<PartListModalProps> = ({
                           <td className="p-3">
                             <div className="flex items-center gap-2">
                               <div
-                                className="w-5 h-5 rounded-full border border-white/20 shadow-sm flex items-center justify-center text-[9px] font-bold"
+                                className="min-w-5 h-5 px-0.5 rounded-full border border-white/20 shadow-sm flex items-center justify-center text-[8px] font-bold"
                                 style={{ backgroundColor: color.hex, color: color.textColor }}
                               >
                                 {color.symbol}

@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
-import { ZoomIn, ZoomOut, Maximize2, Grid, Sparkles, Box, Palette, Undo2, Layers, X, HelpCircle } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2, Minimize2, Scan, Grid, Sparkles, Box, Palette, Undo2, Layers, X, HelpCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { DotShape, LegoColor, MosaicData, MosaicSettings, OptimizationSummary, PlacedPiece, SelectedPieceInfo } from '../types';
 import { ColorPickerModal } from './ColorPickerModal';
 
@@ -59,29 +59,155 @@ export const MosaicCanvas: React.FC<MosaicCanvasProps> = ({
   const mouseDownPosRef = useRef<{ clientX: number; clientY: number; px: number; py: number } | null>(null);
   const hasDraggedRef = useRef(false);
 
+  // Fullscreen state
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isPaletteExpandedInFullscreen, setIsPaletteExpandedInFullscreen] = useState(true);
+
+  // Track if user explicitly manipulated zoom or pan manually
+  const userInteractedWithZoomRef = useRef(false);
+
   // Pan state
   const [isPanning, setIsPanning] = useState(false);
   const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const panStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  // Reset view and selection when mosaic dimensions change
-  useEffect(() => {
-    setZoomLevel(1);
-    setPanOffset({ x: 0, y: 0 });
-    setSelectedPieces(new Map());
-  }, [mosaic?.width, mosaic?.height]);
+  // Calculate the zoom level required to fit the entire mosaic inside the container with comfortable margins
+  const calculateFitZoom = useCallback(() => {
+    if (!containerRef.current || !mosaic) return 0.65;
+    const container = containerRef.current;
+    const rect = container.getBoundingClientRect();
+    const cWidth = rect.width || container.clientWidth;
+    const cHeight = rect.height || container.clientHeight;
+    if (!cWidth || !cHeight || cWidth < 50 || cHeight < 50) return 0.65;
 
-  // Keyboard shortcut to clear selection (Esc)
+    const baseCanvasWidth = 768;
+    const dotSize = Math.max(8, Math.floor(baseCanvasWidth / mosaic.width));
+    // Include 4px outer frame border each side = 8px
+    const fullW = mosaic.width * dotSize + 8;
+    const fullH = mosaic.height * dotSize + 8;
+
+    // Available space subtracting container padding (p-6 is 24px each side = 48px) plus visual breathing room
+    const padX = isFullscreen ? 56 : 48;
+    const padY = isFullscreen ? 56 : 48;
+    const availW = Math.max(80, cWidth - padX);
+    const availH = Math.max(80, cHeight - padY);
+
+    const fitScale = Math.min(availW / fullW, availH / fullH);
+    // In normal view cap at 1.0 (100%) so small mosaics don't overstretch, in fullscreen allow up to 1.8x
+    const maxScale = isFullscreen ? 1.8 : 1.0;
+    const clamped = Math.min(maxScale, Math.max(0.15, fitScale));
+    // Round to 2 decimals (e.g. 0.64 -> 64%)
+    return Math.round(clamped * 100) / 100;
+  }, [mosaic, isFullscreen]);
+
+  // Reset to auto-fit view
+  const handleResetToFit = useCallback(() => {
+    userInteractedWithZoomRef.current = false;
+    const fit = calculateFitZoom();
+    setZoomLevel(fit);
+    setPanOffset({ x: 0, y: 0 });
+  }, [calculateFitZoom]);
+
+  // Fullscreen toggle
+  const toggleFullscreen = useCallback(async () => {
+    const nextState = !isFullscreen;
+    setIsFullscreen(nextState);
+    userInteractedWithZoomRef.current = false;
+
+    try {
+      if (nextState) {
+        if (containerRef.current?.parentElement && !document.fullscreenElement) {
+          await containerRef.current.parentElement.requestFullscreen?.().catch(() => {});
+        }
+      } else {
+        if (document.fullscreenElement) {
+          await document.exitFullscreen?.().catch(() => {});
+        }
+      }
+    } catch {
+      // Graceful fallback to CSS fixed fullscreen overlay
+    }
+  }, [isFullscreen]);
+
+  // Sync with native browser fullscreen changes
+  useEffect(() => {
+    const handleFsChange = () => {
+      if (!document.fullscreenElement && isFullscreen) {
+        setIsFullscreen(false);
+        userInteractedWithZoomRef.current = false;
+      }
+    };
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, [isFullscreen]);
+
+  // Auto-fit to show entire picture when mosaic dimensions change or new image is loaded
+  useEffect(() => {
+    userInteractedWithZoomRef.current = false;
+    setSelectedPieces(new Map());
+    setPanOffset({ x: 0, y: 0 });
+
+    const fit = calculateFitZoom();
+    setZoomLevel(fit);
+  }, [mosaic?.id, mosaic?.width, mosaic?.height, calculateFitZoom]);
+
+  // Initial mount auto-fit once DOM layout is measured
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!userInteractedWithZoomRef.current) {
+        const fit = calculateFitZoom();
+        setZoomLevel(fit);
+        setPanOffset({ x: 0, y: 0 });
+      }
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [calculateFitZoom]);
+
+  // ResizeObserver to keep entire picture visible on window/container resize if user hasn't manually zoomed
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !mosaic) return;
+
+    let resizeTimer: ReturnType<typeof setTimeout>;
+    const ro = new ResizeObserver(() => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        if (!userInteractedWithZoomRef.current) {
+          const fit = calculateFitZoom();
+          setZoomLevel(fit);
+          setPanOffset({ x: 0, y: 0 });
+        }
+      }, 50);
+    });
+
+    ro.observe(container);
+    return () => {
+      clearTimeout(resizeTimer);
+      ro.disconnect();
+    };
+  }, [mosaic, calculateFitZoom]);
+
+  // Keyboard shortcut to clear selection (Esc) or toggle Fullscreen (F)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (isFullscreen) {
+          setIsFullscreen(false);
+          userInteractedWithZoomRef.current = false;
+        }
         setSelectedPieces(new Map());
         setMarqueeBox(null);
+      } else if ((e.key === 'f' || e.key === 'F') && !isColorPickerOpen) {
+        const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+        if (tag !== 'input' && tag !== 'textarea' && tag !== 'select') {
+          e.preventDefault();
+          toggleFullscreen();
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [isFullscreen, isColorPickerOpen, toggleFullscreen]);
 
   const showOptimizedPieces = settings.enableOptimization && !!optimization && viewMode === 'pieces';
 
@@ -148,6 +274,67 @@ export const MosaicCanvas: React.FC<MosaicCanvasProps> = ({
     // 1. Draw Lego Baseplate Background (dark charcoal/black with subtle textured stud sockets)
     ctx.fillStyle = '#11141A';
     ctx.fillRect(0, 0, fullW, fullH);
+
+    const { activeWidth = width, activeHeight = height, activeStartX = 0, activeStartY = 0 } = mosaic;
+    const isPartialPlate = activeWidth < width || activeHeight < height;
+
+    // Draw authentic bare baseplate studs for all empty positions
+    for (let py = 0; py < height; py++) {
+      for (let px = 0; px < width; px++) {
+        if (!pixels[py] || !pixels[py][px]) {
+          const cx = px * dotSize + dotSize / 2;
+          const cy = py * dotSize + dotSize / 2;
+          const studRadius = dotSize * 0.33;
+
+          // Stud cylinder
+          ctx.beginPath();
+          ctx.arc(cx, cy, studRadius, 0, Math.PI * 2);
+          ctx.fillStyle = '#161923';
+          ctx.fill();
+
+          // Top-left bevel highlight
+          ctx.beginPath();
+          ctx.arc(cx, cy, studRadius, Math.PI * 0.75, Math.PI * 1.75);
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+          ctx.lineWidth = Math.max(0.6, dotSize * 0.05);
+          ctx.stroke();
+
+          // Bottom-right shadow
+          ctx.beginPath();
+          ctx.arc(cx, cy, studRadius, -Math.PI * 0.25, Math.PI * 0.75);
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
+          ctx.lineWidth = Math.max(0.6, dotSize * 0.05);
+          ctx.stroke();
+
+          // Authentic LEGO hollow technic center socket hole
+          const holeRadius = studRadius * 0.46;
+          ctx.beginPath();
+          ctx.arc(cx, cy, holeRadius, 0, Math.PI * 2);
+          ctx.fillStyle = '#0a0c10';
+          ctx.fill();
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+          ctx.lineWidth = 0.5;
+          ctx.stroke();
+        }
+      }
+    }
+
+    // When fewer rows/columns are used, draw elevation cast shadow under the placed piece area onto the baseplate
+    if (isPartialPlate) {
+      const ax = activeStartX * dotSize;
+      const ay = activeStartY * dotSize;
+      const aw = activeWidth * dotSize;
+      const ah = activeHeight * dotSize;
+
+      ctx.save();
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+      ctx.shadowBlur = Math.max(8, dotSize * 0.9);
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = Math.max(2, dotSize * 0.2);
+      ctx.fillStyle = 'rgba(12, 15, 20, 0.95)';
+      ctx.fillRect(ax, ay, aw, ah);
+      ctx.restore();
+    }
 
     if (showOptimizedPieces && optimization) {
       // ================= MULTI-STUD CONSOLIDATED PIECES RENDERING =================
@@ -270,7 +457,8 @@ export const MosaicCanvas: React.FC<MosaicCanvasProps> = ({
 
               // Symbols if enabled
               if (showSymbols && dotSize >= 12) {
-                const fontSize = Math.max(7, Math.floor(dotSize * 0.3));
+                const isMultiChar = color.symbol.length > 1;
+                const fontSize = Math.max(6, Math.floor(dotSize * (isMultiChar ? 0.22 : 0.3)));
                 ctx.font = `bold ${fontSize}px sans-serif`;
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
@@ -307,10 +495,12 @@ export const MosaicCanvas: React.FC<MosaicCanvasProps> = ({
 
       // 2. Draw each 1x1 dot
       for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const color = pixels[y][x];
-        const cx = x * dotSize + dotSize / 2;
-        const cy = y * dotSize + dotSize / 2;
+        for (let x = 0; x < width; x++) {
+          const color = pixels[y][x];
+          if (!color) continue;
+
+          const cx = x * dotSize + dotSize / 2;
+          const cy = y * dotSize + dotSize / 2;
 
         const isHighlighted = highlightedColorId === null || color.id === highlightedColorId;
         const opacity = isHighlighted ? 1 : 0.18;
@@ -428,7 +618,9 @@ export const MosaicCanvas: React.FC<MosaicCanvasProps> = ({
 
         // 3. Optional Symbols / Numbers printed on dots (builder mode)
         if (showSymbols && dotSize >= 12 && isHighlighted) {
-          ctx.font = `bold ${Math.max(8, Math.floor(dotSize * 0.45))}px -apple-system, BlinkMacSystemFont, sans-serif`;
+          const isMultiChar = color.symbol.length > 1;
+          const fontRatio = isMultiChar ? 0.33 : 0.45;
+          ctx.font = `bold ${Math.max(7, Math.floor(dotSize * fontRatio))}px -apple-system, BlinkMacSystemFont, sans-serif`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillStyle = color.textColor;
@@ -591,6 +783,52 @@ export const MosaicCanvas: React.FC<MosaicCanvasProps> = ({
       ctx.lineWidth = 2.5;
       ctx.strokeRect(0, 0, fullW, fullH);
     }
+
+    // 6. When fewer rows/columns are used, draw active artwork boundary & corner alignment brackets
+    if (isPartialPlate) {
+      const ax = activeStartX * dotSize;
+      const ay = activeStartY * dotSize;
+      const aw = activeWidth * dotSize;
+      const ah = activeHeight * dotSize;
+
+      ctx.save();
+      // Outer active boundary dashed guideline
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.strokeRect(ax, ay, aw, ah);
+      ctx.setLineDash([]);
+
+      // High-visibility amber corner alignment brackets
+      const cLen = Math.min(14, dotSize * 0.85);
+      ctx.strokeStyle = '#F59E0B';
+      ctx.lineWidth = 2;
+      // Top-left
+      ctx.beginPath();
+      ctx.moveTo(ax, ay + cLen);
+      ctx.lineTo(ax, ay);
+      ctx.lineTo(ax + cLen, ay);
+      ctx.stroke();
+      // Top-right
+      ctx.beginPath();
+      ctx.moveTo(ax + aw - cLen, ay);
+      ctx.lineTo(ax + aw, ay);
+      ctx.lineTo(ax + aw, ay + cLen);
+      ctx.stroke();
+      // Bottom-left
+      ctx.beginPath();
+      ctx.moveTo(ax, ay + ah - cLen);
+      ctx.lineTo(ax, ay + ah);
+      ctx.lineTo(ax + cLen, ay + ah);
+      ctx.stroke();
+      // Bottom-right
+      ctx.beginPath();
+      ctx.moveTo(ax + aw - cLen, ay + ah);
+      ctx.lineTo(ax + aw, ay + ah);
+      ctx.lineTo(ax + aw, ay + ah - cLen);
+      ctx.stroke();
+      ctx.restore();
+    }
   }, [mosaic, settings, highlightedColorId, showOptimizedPieces, optimization, selectedPieces, marqueeBox]);
 
   useEffect(() => {
@@ -600,6 +838,7 @@ export const MosaicCanvas: React.FC<MosaicCanvasProps> = ({
   // Handle canvas mouse move for hover inspection and marquee dragging
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (isPanning) {
+      userInteractedWithZoomRef.current = true;
       setPanOffset({
         x: e.clientX - panStartRef.current.x,
         y: e.clientY - panStartRef.current.y,
@@ -646,10 +885,21 @@ export const MosaicCanvas: React.FC<MosaicCanvasProps> = ({
     }
   };
 
-  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (e.button === 1 || (e.button === 0 && e.altKey)) {
-      // Alt + Click or Middle Click to pan
+  // Mouse wheel zoom (Ctrl + Wheel or standard wheel over container)
+  const handleWheel = (e: React.WheelEvent) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      userInteractedWithZoomRef.current = true;
+      const delta = e.deltaY < 0 ? 0.08 : -0.08;
+      setZoomLevel((z) => Math.min(3.0, Math.max(0.2, Math.round((z + delta) * 100) / 100)));
+    }
+  };
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLElement>) => {
+    if (e.button === 1 || (e.button === 0 && e.altKey) || (e.button === 0 && !hoverPixel)) {
+      // Alt + Click, Middle Click, or clicking canvas background to pan
       setIsPanning(true);
+      userInteractedWithZoomRef.current = true;
       panStartRef.current = {
         x: e.clientX - panOffset.x,
         y: e.clientY - panOffset.y,
@@ -668,7 +918,7 @@ export const MosaicCanvas: React.FC<MosaicCanvasProps> = ({
     }
   };
 
-  const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const handleMouseUp = (e: React.MouseEvent<HTMLElement>) => {
     if (isPanning) {
       setIsPanning(false);
       return;
@@ -705,6 +955,7 @@ export const MosaicCanvas: React.FC<MosaicCanvasProps> = ({
         for (let y = minY; y <= maxY; y++) {
           for (let x = minX; x <= maxX; x++) {
             const c = mosaic.pixels[y][x];
+            if (!c) continue;
             const id = `dot_${x}_${y}`;
             newlySelected.set(id, {
               id,
@@ -750,6 +1001,14 @@ export const MosaicCanvas: React.FC<MosaicCanvasProps> = ({
 
     if (!hoverPixel || !mosaic) return;
     const { x: px, y: py, color, piece } = hoverPixel;
+
+    if (!color) {
+      // Clicked on bare baseplate stud - clear selection unless Shift is held
+      if (!e.shiftKey) {
+        setSelectedPieces(new Map());
+      }
+      return;
+    }
 
     let targetPiece: SelectedPieceInfo;
     if (showOptimizedPieces && optimization && piece) {
@@ -858,7 +1117,7 @@ export const MosaicCanvas: React.FC<MosaicCanvasProps> = ({
       for (let y = 0; y < mosaic.height; y++) {
         for (let x = 0; x < mosaic.width; x++) {
           const c = mosaic.pixels[y][x];
-          if (c.id === targetColorId) {
+          if (c && c.id === targetColorId) {
             const id = `dot_${x}_${y}`;
             matched.set(id, {
               id,
@@ -893,14 +1152,31 @@ export const MosaicCanvas: React.FC<MosaicCanvasProps> = ({
   }
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col">
+    <div className={`transition-all duration-200 flex flex-col ${
+      isFullscreen
+        ? 'fixed inset-0 z-40 bg-slate-950 p-3 sm:p-5 overflow-hidden'
+        : 'bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl'
+    }`}>
       {/* Canvas Toolbar */}
       <div className="px-4 py-2.5 bg-slate-950/80 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-bold text-slate-200">Interactive Canvas</span>
           <span className="text-slate-400 font-mono">
-            ({mosaic.width}×{mosaic.height} studs)
+            ({mosaic.width}×{mosaic.height} plate)
           </span>
+
+          {mosaic.activeWidth && mosaic.activeHeight && (mosaic.activeWidth < mosaic.width || mosaic.activeHeight < mosaic.height) && (
+            <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-mono font-medium flex items-center gap-1">
+              <span>Artwork: {mosaic.activeWidth}×{mosaic.activeHeight}</span>
+              <span className="text-amber-400/60">({mosaic.totalDots.toLocaleString()} pieces)</span>
+            </span>
+          )}
+
+          {isFullscreen && (
+            <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold">
+              Full Screen Mode (Esc to exit)
+            </span>
+          )}
 
           {/* Highlighted Color Action Pill */}
           {highlightedColorId && (
@@ -985,37 +1261,64 @@ export const MosaicCanvas: React.FC<MosaicCanvasProps> = ({
             </div>
           )}
 
-          {/* Quick Zoom & Reset */}
+          {/* Quick Zoom, Fit & Full Screen */}
           <div className="flex items-center gap-1 bg-slate-800/80 p-1 rounded-lg border border-slate-700/60">
             <button
               id="zoom-out-btn"
-              onClick={() => setZoomLevel((z) => Math.max(0.6, z - 0.2))}
+              onClick={() => {
+                userInteractedWithZoomRef.current = true;
+                setZoomLevel((z) => Math.max(0.2, Math.round((z - 0.15) * 100) / 100));
+              }}
               className="p-1 rounded hover:bg-slate-700 text-slate-300 transition"
               title="Zoom Out"
             >
               <ZoomOut className="w-3.5 h-3.5" />
             </button>
-            <span className="px-1.5 font-mono text-[11px] text-slate-300 select-none">
+            <span className="px-1.5 font-mono text-[11px] text-slate-300 select-none min-w-[38px] text-center">
               {Math.round(zoomLevel * 100)}%
             </span>
             <button
               id="zoom-in-btn"
-              onClick={() => setZoomLevel((z) => Math.min(2.5, z + 0.2))}
+              onClick={() => {
+                userInteractedWithZoomRef.current = true;
+                setZoomLevel((z) => Math.min(3.0, Math.round((z + 0.15) * 100) / 100));
+              }}
               className="p-1 rounded hover:bg-slate-700 text-slate-300 transition"
               title="Zoom In"
             >
               <ZoomIn className="w-3.5 h-3.5" />
             </button>
+
+            <div className="w-[1px] h-3.5 bg-slate-700 my-auto mx-0.5" />
+
             <button
               id="zoom-reset-btn"
-              onClick={() => {
-                setZoomLevel(1);
-                setPanOffset({ x: 0, y: 0 });
-              }}
-              className="p-1 rounded hover:bg-slate-700 text-slate-300 transition"
-              title="Reset View"
+              onClick={handleResetToFit}
+              className="p-1 rounded hover:bg-slate-700 text-slate-300 hover:text-amber-300 transition flex items-center gap-1"
+              title="Fit to View (Show entire picture)"
             >
-              <Maximize2 className="w-3.5 h-3.5" />
+              <Scan className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline text-[11px] font-medium pr-0.5">Fit</span>
+            </button>
+
+            <button
+              id="canvas-fullscreen-btn"
+              onClick={toggleFullscreen}
+              className={`p-1 rounded transition flex items-center gap-1 ${
+                isFullscreen
+                  ? 'bg-amber-500 text-slate-950 font-bold hover:bg-amber-400 shadow-sm'
+                  : 'hover:bg-slate-700 text-slate-300 hover:text-white'
+              }`}
+              title={isFullscreen ? 'Exit Full Screen (Esc)' : 'Go Full Screen (F)'}
+            >
+              {isFullscreen ? (
+                <>
+                  <Minimize2 className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline text-[11px]">Exit</span>
+                </>
+              ) : (
+                <Maximize2 className="w-3.5 h-3.5" />
+              )}
             </button>
           </div>
         </div>
@@ -1024,7 +1327,12 @@ export const MosaicCanvas: React.FC<MosaicCanvasProps> = ({
       {/* Main Canvas Stage */}
       <div
         ref={containerRef}
-        className="relative flex-1 min-h-[440px] max-h-[640px] bg-slate-950 flex items-center justify-center p-6 overflow-hidden cursor-crosshair select-none"
+        onWheel={handleWheel}
+        className={`relative flex-1 bg-slate-950 flex items-center justify-center p-6 overflow-hidden cursor-crosshair select-none ${
+          isFullscreen
+            ? 'min-h-0 max-h-none rounded-xl border border-slate-800 my-1.5'
+            : 'min-h-[440px] max-h-[640px]'
+        }`}
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
         onMouseLeave={() => {
@@ -1146,46 +1454,172 @@ export const MosaicCanvas: React.FC<MosaicCanvasProps> = ({
         {/* Hover Inspector Tooltip Overlay */}
         {hoverPixel && (
           <div className="absolute bottom-4 left-4 bg-slate-900/95 backdrop-blur-md border border-slate-700 p-2.5 rounded-xl shadow-2xl flex items-center gap-3 text-xs pointer-events-none z-10 animate-fade-in">
-            {/* Swatch */}
-            <div
-              className="w-7 h-7 rounded-full border-2 border-white/20 shadow-md flex items-center justify-center text-[10px] font-bold"
-              style={{
-                backgroundColor: hoverPixel.color.hex,
-                color: hoverPixel.color.textColor,
-              }}
-            >
-              {hoverPixel.color.symbol}
-            </div>
-
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-white">{hoverPixel.color.legoName}</span>
-                <span className="text-[10px] text-slate-400">
-                  BL ID: {hoverPixel.color.bricklinkId} ({hoverPixel.color.bricklinkName})
-                </span>
-              </div>
-              <div className="text-[11px] text-slate-300 flex items-center gap-2 mt-0.5">
-                <span className="font-mono text-amber-400">
-                  X:{hoverPixel.x + 1}, Y:{hoverPixel.y + 1}
-                </span>
-                <span className="text-slate-500">•</span>
-                <span className="text-sky-300 font-medium">Plate {hoverPixel.plateNum}</span>
-                <span className="text-slate-500">•</span>
-                <span className="font-mono text-slate-400">{hoverPixel.color.hex}</span>
-              </div>
-              {hoverPixel.piece && (
-                <div className="mt-1 pt-1 border-t border-slate-700/60 flex items-center gap-2 text-[10px]">
-                  <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono font-bold">
-                    {hoverPixel.piece.family.toUpperCase()} {hoverPixel.piece.studDims}
-                  </span>
-                  <span className="text-slate-300 font-mono">Part #{hoverPixel.piece.partId}</span>
-                  <span className="text-slate-400">({hoverPixel.piece.area} {hoverPixel.piece.area === 1 ? 'stud' : 'studs'})</span>
+            {hoverPixel.color ? (
+              <>
+                {/* Swatch */}
+                <div
+                  className="w-7 h-7 rounded-full border-2 border-white/20 shadow-md flex items-center justify-center text-[10px] font-bold"
+                  style={{
+                    backgroundColor: hoverPixel.color.hex,
+                    color: hoverPixel.color.textColor,
+                  }}
+                >
+                  {hoverPixel.color.symbol}
                 </div>
-              )}
-            </div>
+
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-white">{hoverPixel.color.legoName}</span>
+                    <span className="text-[10px] text-slate-400">
+                      BL ID: {hoverPixel.color.bricklinkId} ({hoverPixel.color.bricklinkName})
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-300 flex items-center gap-2 mt-0.5">
+                    <span className="font-mono text-amber-400">
+                      Col:{hoverPixel.x + 1}, Row:{hoverPixel.y + 1}
+                    </span>
+                    <span className="text-slate-500">•</span>
+                    <span className="text-sky-300 font-medium">Plate #{hoverPixel.plateNum}</span>
+                    <span className="text-slate-500">•</span>
+                    <span className="font-mono text-slate-400">{hoverPixel.color.hex}</span>
+                  </div>
+                  {hoverPixel.piece && (
+                    <div className="mt-1 pt-1 border-t border-slate-700/60 flex items-center gap-2 text-[10px]">
+                      <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono font-bold">
+                        {hoverPixel.piece.family.toUpperCase()} {hoverPixel.piece.studDims}
+                      </span>
+                      <span className="text-slate-300 font-mono">Part #{hoverPixel.piece.partId}</span>
+                      <span className="text-slate-400">({hoverPixel.piece.area} {hoverPixel.piece.area === 1 ? 'stud' : 'studs'})</span>
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Empty baseplate stud */}
+                <div className="w-7 h-7 rounded-full border-2 border-dashed border-slate-600 bg-slate-950 flex items-center justify-center text-[10px] font-bold text-slate-500">
+                  ∅
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-300">Baseplate (Empty Stud)</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 font-mono">
+                      No piece placed
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
+                    <span className="font-mono text-slate-300">
+                      Col:{hoverPixel.x + 1}, Row:{hoverPixel.y + 1}
+                    </span>
+                    <span className="text-slate-600">•</span>
+                    <span className="text-sky-400 font-medium">Subplate #{hoverPixel.plateNum}</span>
+                    <span className="text-slate-600">•</span>
+                    <span className="text-slate-500">Bare Baseplate Stud</span>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
+
+      {/* When in Full Screen Mode: Active Colors in Mosaic Area for easy selection */}
+      {isFullscreen && mosaic && (
+        <div className="bg-slate-900/95 border-t border-slate-800/90 px-4 py-2.5 backdrop-blur-md shrink-0 shadow-lg">
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-200 uppercase tracking-wider">
+                <Palette className="w-3.5 h-3.5 text-amber-400" />
+                <span>Active Colors in Mosaic ({mosaic.uniqueColors.length})</span>
+              </div>
+              <span className="text-[11px] text-slate-400 hidden sm:inline">
+                • Click any color to highlight & isolate pieces across the full screen
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {highlightedColorId && (
+                <>
+                  <button
+                    id="fullscreen-change-active-color-btn"
+                    onClick={() => {
+                      setColorPickerTarget('highlighted_color');
+                      setIsColorPickerOpen(true);
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 transition shadow-sm"
+                    title="Change all pieces of this highlighted color via full LEGO® color picker"
+                  >
+                    <Palette className="w-3.5 h-3.5" />
+                    <span>Change Color ({highlightedColorCount})...</span>
+                  </button>
+                  <button
+                    onClick={() => onHighlightColor(null)}
+                    className="text-xs text-amber-400 hover:text-amber-300 font-semibold px-2 py-1 rounded hover:bg-amber-500/10 transition"
+                  >
+                    Clear isolation
+                  </button>
+                </>
+              )}
+
+              <button
+                onClick={() => setIsPaletteExpandedInFullscreen(!isPaletteExpandedInFullscreen)}
+                className="text-slate-400 hover:text-slate-200 px-2 py-1 rounded hover:bg-slate-800 transition flex items-center gap-1 text-xs"
+                title={isPaletteExpandedInFullscreen ? 'Collapse color palette' : 'Expand color palette'}
+              >
+                {isPaletteExpandedInFullscreen ? (
+                  <>
+                    <ChevronDown className="w-4 h-4 text-slate-400" />
+                    <span className="text-[11px] hidden sm:inline text-slate-400">Hide Palette</span>
+                  </>
+                ) : (
+                  <>
+                    <ChevronUp className="w-4 h-4 text-amber-400" />
+                    <span className="text-[11px] hidden sm:inline text-amber-300 font-medium">Show Palette ({mosaic.uniqueColors.length})</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {isPaletteExpandedInFullscreen && (
+            <div className="flex flex-wrap gap-1.5 max-h-24 sm:max-h-28 overflow-y-auto custom-scrollbar pr-1">
+              {mosaic.uniqueColors.map((color) => {
+                const isSelected = highlightedColorId === color.id;
+                const count = mosaic.colorCounts.get(color.id)?.count || 0;
+                return (
+                  <button
+                    key={color.id}
+                    id={`fullscreen-palette-dot-${color.id}`}
+                    onClick={() => onHighlightColor(isSelected ? null : color.id)}
+                    className={`group flex items-center gap-1.5 px-2 py-1 rounded-lg border text-xs transition ${
+                      isSelected
+                        ? 'border-amber-400 bg-amber-500/25 text-white ring-1 ring-amber-400 shadow-sm'
+                        : 'border-slate-800 bg-slate-950/70 hover:border-slate-700 text-slate-300 hover:bg-slate-800/60'
+                    }`}
+                    title={`${color.legoName} (BrickLink #${color.bricklinkId}): ${count} pieces • Click to isolate`}
+                  >
+                    <div
+                      className="min-w-3.5 h-3.5 px-0.5 rounded-full border border-white/20 shadow-sm shrink-0 flex items-center justify-center text-[6.5px] font-bold"
+                      style={{
+                        backgroundColor: color.hex,
+                        color: color.textColor,
+                      }}
+                    >
+                      {color.symbol}
+                    </div>
+                    <span className="text-[11px] font-medium truncate max-w-[90px]">
+                      {color.legoName}
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono font-bold">
+                      ×{count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Footer Info Bar */}
       <div className="px-4 py-2 bg-slate-950/90 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-400">
@@ -1206,7 +1640,9 @@ export const MosaicCanvas: React.FC<MosaicCanvasProps> = ({
             </>
           )}
           <span className="hidden sm:inline text-slate-600">•</span>
-          <span className="hidden sm:inline">Alt+Drag to pan</span>
+          <span className="hidden sm:inline">Drag or Alt+Drag to pan • Ctrl+Wheel to zoom</span>
+          <span className="hidden sm:inline text-slate-600">•</span>
+          <span className="hidden sm:inline text-amber-400 font-medium">Press F for Full Screen</span>
           {showOptimizedPieces && optimization && (
             <>
               <span className="hidden sm:inline text-slate-600">•</span>
@@ -1216,8 +1652,14 @@ export const MosaicCanvas: React.FC<MosaicCanvasProps> = ({
             </>
           )}
         </div>
-        <div className="flex items-center gap-2 font-mono">
-          <span>Dimensions: {(mosaic.width * 0.8).toFixed(1)}cm × {(mosaic.height * 0.8).toFixed(1)}cm</span>
+        <div className="flex items-center gap-3 font-mono text-slate-400">
+          <span>Plate: {(mosaic.width * 0.8).toFixed(1)}cm × {(mosaic.height * 0.8).toFixed(1)}cm</span>
+          {mosaic.activeWidth && mosaic.activeHeight && (mosaic.activeWidth < mosaic.width || mosaic.activeHeight < mosaic.height) && (
+            <>
+              <span className="text-slate-600">•</span>
+              <span className="text-amber-400">Artwork: {(mosaic.activeWidth * 0.8).toFixed(1)}cm × {(mosaic.activeHeight * 0.8).toFixed(1)}cm</span>
+            </>
+          )}
         </div>
       </div>
 

@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { X, BookOpen, Download, FileText, CheckCircle2, Sparkles, Loader2, Printer } from 'lucide-react';
+import { X, BookOpen, Download, FileText, CheckCircle2, Sparkles, Loader2, Printer, Hash, Tag, Check } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { jsPDF } from 'jspdf';
 import { MosaicData, MosaicSettings } from '../types';
-import { generateInstructionManualPdf } from '../utils/pdfGenerator';
+import { generateInstructionManualPdf, PdfSymbolMode } from '../utils/pdfGenerator';
 
 interface PdfModalProps {
   isOpen: boolean;
@@ -21,6 +21,7 @@ export const PdfModal: React.FC<PdfModalProps> = ({
   defaultProjectName,
 }) => {
   const [projectName, setProjectName] = useState(defaultProjectName || 'LEGO® Art Mosaic');
+  const [symbolMode, setSymbolMode] = useState<PdfSymbolMode>('palette');
   const [isGenerating, setIsGenerating] = useState(false);
   const [progressPct, setProgressPct] = useState(0);
   const [statusMsg, setStatusMsg] = useState('');
@@ -48,6 +49,7 @@ export const PdfModal: React.FC<PdfModalProps> = ({
         mosaic,
         settings,
         projectName,
+        symbolMode,
         onProgress: (pct, msg) => {
           setProgressPct(pct);
           setStatusMsg(msg);
@@ -119,6 +121,77 @@ export const PdfModal: React.FC<PdfModalProps> = ({
               placeholder="e.g. Mona Lisa Masterpiece"
               className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-sm font-semibold text-white focus:outline-none focus:border-amber-500"
             />
+          </div>
+
+          {/* Piece Symbols & Numbering Selection */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-slate-300 uppercase tracking-wider block">
+                Piece Symbols & Numbering
+              </label>
+              <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
+                <Check className="w-3 h-3" />
+                100% Alphanumeric (Error-Free PDF)
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button
+                type="button"
+                id="pdf-symbol-palette-btn"
+                onClick={() => {
+                  setSymbolMode('palette');
+                  setGeneratedPdf(null);
+                  setPdfBlobUrl(null);
+                }}
+                className={`p-3 rounded-xl border text-left transition relative flex flex-col gap-1 ${
+                  symbolMode === 'palette'
+                    ? 'border-amber-500 bg-amber-500/10 text-white'
+                    : 'border-slate-800 bg-slate-950/60 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                }`}
+              >
+                <div className="flex items-center justify-between w-full">
+                  <span className="font-bold text-xs flex items-center gap-1.5 text-white">
+                    <Tag className="w-3.5 h-3.5 text-amber-400" />
+                    Alphanumeric Palette Codes
+                  </span>
+                  {symbolMode === 'palette' && (
+                    <span className="w-2 h-2 rounded-full bg-amber-400" />
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-400 leading-snug">
+                  Uses distinct alphanumeric codes: <span className="font-mono text-amber-300 font-semibold">1–9, A–Z, AQ, SB...</span>
+                </p>
+              </button>
+
+              <button
+                type="button"
+                id="pdf-symbol-sequential-btn"
+                onClick={() => {
+                  setSymbolMode('sequential');
+                  setGeneratedPdf(null);
+                  setPdfBlobUrl(null);
+                }}
+                className={`p-3 rounded-xl border text-left transition relative flex flex-col gap-1 ${
+                  symbolMode === 'sequential'
+                    ? 'border-amber-500 bg-amber-500/10 text-white'
+                    : 'border-slate-800 bg-slate-950/60 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                }`}
+              >
+                <div className="flex items-center justify-between w-full">
+                  <span className="font-bold text-xs flex items-center gap-1.5 text-white">
+                    <Hash className="w-3.5 h-3.5 text-sky-400" />
+                    Sequential Numbers (1, 2, 3...)
+                  </span>
+                  {symbolMode === 'sequential' && (
+                    <span className="w-2 h-2 rounded-full bg-sky-400" />
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-400 leading-snug">
+                  Official LEGO® Art cup style: <span className="font-mono text-sky-300 font-semibold">1, 2, 3... {mosaic.uniqueColors.length}</span> by piece frequency
+                </p>
+              </button>
+            </div>
           </div>
 
           {/* Booklet Features Overview */}

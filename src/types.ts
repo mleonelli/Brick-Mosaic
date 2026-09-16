@@ -119,9 +119,13 @@ export interface MosaicPixel {
 }
 
 export interface MosaicData {
-  width: number;
-  height: number;
-  pixels: LegoColor[][]; // row (y), col (x)
+  width: number; // Baseplate width in studs (e.g. 48)
+  height: number; // Baseplate height in studs (e.g. 48)
+  activeWidth?: number; // Number of active columns used on the baseplate
+  activeHeight?: number; // Number of active rows used on the baseplate
+  activeStartX?: number; // Starting horizontal stud column on baseplate (for centering/shifting)
+  activeStartY?: number; // Starting vertical stud row on baseplate (for centering/shifting)
+  pixels: (LegoColor | null)[][]; // row (y), col (x) — null indicates bare/empty baseplate stud
   colorCounts: Map<string, { color: LegoColor; count: number }>;
   uniqueColors: LegoColor[];
   totalDots: number;

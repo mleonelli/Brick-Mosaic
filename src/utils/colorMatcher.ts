@@ -1,5 +1,6 @@
 import { LegoColor, MosaicData, MosaicSettings } from '../types';
 import { rgbToLab } from '../data/legoColors';
+import { OFFICIAL_BASEPLATES } from '../data/baseplates';
 
 // Calculate perceptual color distance in CIELAB space (CIE76 Delta E)
 export function deltaE(lab1: [number, number, number], lab2: [number, number, number]): number {
@@ -220,8 +221,9 @@ export function generateMosaicFromImage(
   availableColors: LegoColor[]
 ): MosaicData {
   const {
-    width,
-    height,
+    baseplatePresetId,
+    width: requestedCols,
+    height: requestedRows,
     ditherMode,
     ditherStrength = 65,
     sharpness = 35,
@@ -231,10 +233,22 @@ export function generateMosaicFromImage(
     contrast,
     saturation,
     scaleMode,
-    offsetX,
-    offsetY,
-    zoom,
+    offsetX = 0,
+    offsetY = 0,
+    zoom = 1,
   } = settings;
+
+  // Resolve baseplate dimensions from preset
+  const currentPreset = OFFICIAL_BASEPLATES.find((p) => p.id === baseplatePresetId) || OFFICIAL_BASEPLATES[0];
+  const plateWidth = currentPreset.width;
+  const plateHeight = currentPreset.height;
+
+  // Active used columns and rows
+  const activeWidth = Math.min(plateWidth, Math.max(1, requestedCols));
+  const activeHeight = Math.min(plateHeight, Math.max(1, requestedRows));
+
+  const emptyCols = plateWidth - activeWidth;
+  const emptyRows = plateHeight - activeHeight;
 
   // Filter available colors to only allowed ones
   const allowedColors = availableColors.filter(c =>
@@ -245,8 +259,8 @@ export function generateMosaicFromImage(
 
   // Render to offscreen canvas with crop, offset, zoom
   const offscreen = document.createElement('canvas');
-  offscreen.width = width;
-  offscreen.height = height;
+  offscreen.width = activeWidth;
+  offscreen.height = activeHeight;
   const ctx = offscreen.getContext('2d', { willReadFrequently: true });
   if (!ctx) {
     throw new Error('Could not create offscreen canvas context');
@@ -254,35 +268,35 @@ export function generateMosaicFromImage(
 
   // Draw background (black or white)
   ctx.fillStyle = '#1A1A1A';
-  ctx.fillRect(0, 0, width, height);
+  ctx.fillRect(0, 0, activeWidth, activeHeight);
 
   // Compute source crop and dest dimensions based on scaleMode, zoom, offsets
   const imgAspect = img.width / img.height;
-  const targetAspect = width / height;
+  const targetAspect = activeWidth / activeHeight;
 
-  let renderW = width;
-  let renderH = height;
+  let renderW = activeWidth;
+  let renderH = activeHeight;
   let drawX = 0;
   let drawY = 0;
 
   if (scaleMode === 'cover') {
     if (imgAspect > targetAspect) {
       // Image is wider than target
-      renderH = height;
-      renderW = height * imgAspect;
+      renderH = activeHeight;
+      renderW = activeHeight * imgAspect;
     } else {
       // Image is taller than target
-      renderW = width;
-      renderH = width / imgAspect;
+      renderW = activeWidth;
+      renderH = activeWidth / imgAspect;
     }
   } else {
     // contain
     if (imgAspect > targetAspect) {
-      renderW = width;
-      renderH = width / imgAspect;
+      renderW = activeWidth;
+      renderH = activeWidth / imgAspect;
     } else {
-      renderH = height;
-      renderW = height * imgAspect;
+      renderH = activeHeight;
+      renderW = activeHeight * imgAspect;
     }
   }
 
@@ -290,17 +304,36 @@ export function generateMosaicFromImage(
   renderW *= zoom;
   renderH *= zoom;
 
-  // Center + user offset (-50% to +50% of dimension)
-  drawX = (width - renderW) / 2 + (offsetX / 100) * width;
-  drawY = (height - renderH) / 2 + (offsetY / 100) * height;
+  // Center image inside the active boundary
+  const centerX = (activeWidth - renderW) / 2;
+  const centerY = (activeHeight - renderH) / 2;
+
+  // Move the picture when zoomed or cropped to focus on the desired area
+  // When renderW > activeWidth (e.g. zoomed in or cover mode):
+  //   -50% (Left) aligns left edge of photo to frame
+  //   0% (Center) centers photo
+  //   +50% (Right) aligns right edge of photo to frame
+  const panRangeX = Math.max((renderW - activeWidth) / 2, activeWidth * 0.25);
+  drawX = centerX - (offsetX / 50) * panRangeX;
+
+  // When renderH > activeHeight (e.g. zoomed in or cover mode):
+  //   -50% (Top) aligns top edge of photo to frame
+  //   0% (Center) centers photo
+  //   +50% (Bottom) aligns bottom edge of photo to frame
+  const panRangeY = Math.max((renderH - activeHeight) / 2, activeHeight * 0.25);
+  drawY = centerY - (offsetY / 50) * panRangeY;
 
   // Enable high quality image smoothing
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(img, drawX, drawY, renderW, renderH);
 
-  const imgData = ctx.getImageData(0, 0, width, height);
+  const imgData = ctx.getImageData(0, 0, activeWidth, activeHeight);
   const data = imgData.data;
+
+  // Use width and height aliases for the processing pipeline
+  const width = activeWidth;
+  const height = activeHeight;
 
   // Build working floating-point RGB grid
   const bufferR: number[][] = [];
@@ -577,12 +610,38 @@ export function generateMosaicFromImage(
     .sort((a, b) => b.count - a.count)
     .map((entry) => entry.color);
 
+  // 5th pass: Embed into full baseplate grid with balanced centering
+  const activeStartX = Math.floor(emptyCols / 2);
+  const activeStartY = Math.floor(emptyRows / 2);
+
+  const fullPlatePixels: (LegoColor | null)[][] = [];
+  for (let py = 0; py < plateHeight; py++) {
+    fullPlatePixels[py] = new Array(plateWidth);
+    for (let px = 0; px < plateWidth; px++) {
+      const inActive = (
+        px >= activeStartX &&
+        px < activeStartX + activeWidth &&
+        py >= activeStartY &&
+        py < activeStartY + activeHeight
+      );
+      if (inActive) {
+        fullPlatePixels[py][px] = finalPixels[py - activeStartY][px - activeStartX];
+      } else {
+        fullPlatePixels[py][px] = null;
+      }
+    }
+  }
+
   return {
-    width,
-    height,
-    pixels: finalPixels,
+    width: plateWidth,
+    height: plateHeight,
+    activeWidth,
+    activeHeight,
+    activeStartX,
+    activeStartY,
+    pixels: fullPlatePixels,
     colorCounts,
     uniqueColors,
-    totalDots: width * height,
+    totalDots: activeWidth * activeHeight,
   };
 }

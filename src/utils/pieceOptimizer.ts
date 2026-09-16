@@ -171,6 +171,10 @@ export function calculatePieceOptimization(
       if (covered[y][x]) continue;
 
       const targetColor = pixels[y][x];
+      if (!targetColor) {
+        covered[y][x] = true;
+        continue;
+      }
       const targetColorId = targetColor.id;
 
       // Find the best fitting piece from our candidate orientations
@@ -188,7 +192,8 @@ export function calculatePieceOptimization(
           for (let dx = 0; dx < w; dx++) {
             const cy = y + dy;
             const cx = x + dx;
-            if (covered[cy][cx] || pixels[cy][cx].id !== targetColorId) {
+            const p = pixels[cy][cx];
+            if (covered[cy][cx] || !p || p.id !== targetColorId) {
               matches = false;
               break;
             }
@@ -317,9 +322,9 @@ export function calculatePieceOptimization(
     }))
     .sort((a, b) => b.area - a.area || b.count - a.count);
 
-  const originalDots = width * height;
+  const originalDots = mosaic.totalDots || (mosaic.activeWidth && mosaic.activeHeight ? mosaic.activeWidth * mosaic.activeHeight : width * height);
   const totalPieces = pieces.length;
-  const reductionPercent = Math.round(((originalDots - totalPieces) / originalDots) * 100);
+  const reductionPercent = originalDots > 0 ? Math.round(((originalDots - totalPieces) / originalDots) * 100) : 0;
 
   return {
     pieces,

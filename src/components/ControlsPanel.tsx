@@ -22,6 +22,7 @@ import {
   Ratio,
   SlidersHorizontal,
   Info,
+  Move,
 } from 'lucide-react';
 import {
   DotShape,
@@ -80,6 +81,12 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
   const totalSubPlates = subPlatesX * subPlatesY;
   const physicalW = (settings.width * 0.8).toFixed(1);
   const physicalH = (settings.height * 0.8).toFixed(1);
+
+  const emptyCols = Math.max(0, baseWidth - settings.width);
+  const emptyRows = Math.max(0, baseHeight - settings.height);
+
+  const calculatedActiveStartX = Math.floor(emptyCols / 2);
+  const calculatedActiveStartY = Math.floor(emptyRows / 2);
 
   const handlePresetSelect = (presetId: string) => {
     const preset = OFFICIAL_BASEPLATES.find((p) => p.id === presetId);
@@ -346,7 +353,7 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
 
                   {/* Outer baseplate reference bounds */}
                   <div
-                    className="relative border border-dashed border-slate-700 rounded flex items-center justify-center transition-all duration-300"
+                    className="relative border border-dashed border-slate-700 rounded transition-all duration-300"
                     style={{
                       width: '100%',
                       height: '100%',
@@ -356,10 +363,12 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
                   >
                     {/* Active used studs area */}
                     <div
-                      className="bg-amber-500/20 border-2 border-amber-400 rounded transition-all duration-300 flex flex-col items-center justify-center text-center shadow-lg shadow-amber-500/10"
+                      className="bg-amber-500/25 border-2 border-amber-400 rounded transition-all duration-300 flex flex-col items-center justify-center text-center shadow-lg shadow-amber-500/10 absolute"
                       style={{
                         width: `${Math.min(100, Math.max(12, (settings.width / baseWidth) * 100))}%`,
                         height: `${Math.min(100, Math.max(12, (settings.height / baseHeight) * 100))}%`,
+                        left: `${(calculatedActiveStartX / baseWidth) * 100}%`,
+                        top: `${(calculatedActiveStartY / baseHeight) * 100}%`,
                       }}
                     >
                       <span className="text-[10px] font-mono font-bold text-amber-300 leading-tight">
@@ -450,6 +459,21 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
                   )}
                 </button>
               </div>
+
+              {/* Baseplate Balanced Centering Info */}
+              {!isFullBase && (
+                <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 flex items-center justify-between text-xs animate-fade-in">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                    <span className="text-slate-300">
+                      <strong className="text-amber-300 font-mono">{settings.width}×{settings.height}</strong> artwork centered on <strong className="text-slate-100 font-mono">{baseWidth}×{baseHeight}</strong> plate
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-500">
+                    {emptyCols} empty cols • {emptyRows} empty rows
+                  </span>
+                </div>
+              )}
 
               {/* Mode Switcher: By Studs vs By 16x16 Plates */}
               <div className="grid grid-cols-2 bg-slate-950/80 p-1 rounded-xl border border-slate-800 text-xs">
@@ -788,47 +812,146 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
                 />
               </div>
 
-              {/* Offset Sliders */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="text-slate-400">Horizontal Shift</span>
-                    <span className="text-slate-200 font-mono">{settings.offsetX}%</span>
+              {/* Picture Crop & Panning Controls */}
+              <div className="space-y-3">
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  Use zoom and shift to pan across the picture and crop on the desired focal area.
+                </p>
+
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Horizontal Shift */}
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-xs mb-0.5">
+                      <span className="text-slate-400">Horizontal Pan</span>
+                      <span className="text-slate-200 font-mono font-semibold">
+                        {settings.offsetX === 0 ? 'Center (0%)' : `${settings.offsetX > 0 ? '+' : ''}${settings.offsetX}%`}
+                      </span>
+                    </div>
+                    <input
+                      id="offset-x-slider"
+                      type="range"
+                      min="-50"
+                      max="50"
+                      value={settings.offsetX}
+                      onChange={(e) => onUpdateSettings({ offsetX: parseInt(e.target.value) })}
+                      className="w-full accent-amber-500 cursor-pointer"
+                    />
+                    <div className="flex justify-between text-[9px] text-slate-500 font-mono">
+                      <span>Left (-50%)</span>
+                      <span className={settings.offsetX === 0 ? 'text-amber-400 font-bold' : ''}>0%</span>
+                      <span>Right (+50%)</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => onUpdateSettings({ offsetX: -50 })}
+                        className={`py-1 px-1 rounded text-[10px] font-semibold border transition ${
+                          settings.offsetX === -50
+                            ? 'border-amber-500 bg-amber-500/20 text-amber-300'
+                            : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:text-white'
+                        }`}
+                        title="Pan crop to the left side of the picture"
+                      >
+                        Left
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onUpdateSettings({ offsetX: 0 })}
+                        className={`py-1 px-1 rounded text-[10px] font-semibold border transition ${
+                          settings.offsetX === 0
+                            ? 'border-amber-500 bg-amber-500/20 text-amber-300'
+                            : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:text-white'
+                        }`}
+                        title="Center picture horizontally"
+                      >
+                        Center
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onUpdateSettings({ offsetX: 50 })}
+                        className={`py-1 px-1 rounded text-[10px] font-semibold border transition ${
+                          settings.offsetX === 50
+                            ? 'border-amber-500 bg-amber-500/20 text-amber-300'
+                            : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:text-white'
+                        }`}
+                        title="Pan crop to the right side of the picture"
+                      >
+                        Right
+                      </button>
+                    </div>
                   </div>
-                  <input
-                    id="offset-x-slider"
-                    type="range"
-                    min="-40"
-                    max="40"
-                    value={settings.offsetX}
-                    onChange={(e) => onUpdateSettings({ offsetX: parseInt(e.target.value) })}
-                    className="w-full accent-amber-500 cursor-pointer"
-                  />
-                </div>
-                <div>
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="text-slate-400">Vertical Shift</span>
-                    <span className="text-slate-200 font-mono">{settings.offsetY}%</span>
+
+                  {/* Vertical Shift */}
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-xs mb-0.5">
+                      <span className="text-slate-400">Vertical Pan</span>
+                      <span className="text-slate-200 font-mono font-semibold">
+                        {settings.offsetY === 0 ? 'Center (0%)' : `${settings.offsetY > 0 ? '+' : ''}${settings.offsetY}%`}
+                      </span>
+                    </div>
+                    <input
+                      id="offset-y-slider"
+                      type="range"
+                      min="-50"
+                      max="50"
+                      value={settings.offsetY}
+                      onChange={(e) => onUpdateSettings({ offsetY: parseInt(e.target.value) })}
+                      className="w-full accent-amber-500 cursor-pointer"
+                    />
+                    <div className="flex justify-between text-[9px] text-slate-500 font-mono">
+                      <span>Top (-50%)</span>
+                      <span className={settings.offsetY === 0 ? 'text-amber-400 font-bold' : ''}>0%</span>
+                      <span>Bottom (+50%)</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => onUpdateSettings({ offsetY: -50 })}
+                        className={`py-1 px-1 rounded text-[10px] font-semibold border transition ${
+                          settings.offsetY === -50
+                            ? 'border-amber-500 bg-amber-500/20 text-amber-300'
+                            : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:text-white'
+                        }`}
+                        title="Pan crop to the top side of the picture"
+                      >
+                        Top
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onUpdateSettings({ offsetY: 0 })}
+                        className={`py-1 px-1 rounded text-[10px] font-semibold border transition ${
+                          settings.offsetY === 0
+                            ? 'border-amber-500 bg-amber-500/20 text-amber-300'
+                            : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:text-white'
+                        }`}
+                        title="Center picture vertically"
+                      >
+                        Center
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onUpdateSettings({ offsetY: 50 })}
+                        className={`py-1 px-1 rounded text-[10px] font-semibold border transition ${
+                          settings.offsetY === 50
+                            ? 'border-amber-500 bg-amber-500/20 text-amber-300'
+                            : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:text-white'
+                        }`}
+                        title="Pan crop to the bottom side of the picture"
+                      >
+                        Bottom
+                      </button>
+                    </div>
                   </div>
-                  <input
-                    id="offset-y-slider"
-                    type="range"
-                    min="-40"
-                    max="40"
-                    value={settings.offsetY}
-                    onChange={(e) => onUpdateSettings({ offsetY: parseInt(e.target.value) })}
-                    className="w-full accent-amber-500 cursor-pointer"
-                  />
                 </div>
               </div>
 
               {(settings.zoom !== 1 || settings.offsetX !== 0 || settings.offsetY !== 0) && (
                 <button
                   onClick={() => onUpdateSettings({ zoom: 1, offsetX: 0, offsetY: 0 })}
-                  className="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1 font-semibold"
+                  className="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1 font-semibold pt-1"
                 >
                   <RotateCcw className="w-3 h-3" />
-                  Reset framing & zoom
+                  Reset photo zoom & framing
                 </button>
               )}
             </div>
@@ -950,7 +1073,7 @@ export const ControlsPanel: React.FC<ControlsPanelProps> = ({
                     >
                       <div className="flex items-center gap-2 min-w-0">
                         <div
-                          className="w-4 h-4 rounded-full border border-white/20 shrink-0 shadow-sm flex items-center justify-center text-[8px] font-bold"
+                          className="min-w-4 h-4 px-0.5 rounded-full border border-white/20 shrink-0 shadow-sm flex items-center justify-center text-[7px] font-bold"
                           style={{ backgroundColor: color.hex, color: color.textColor }}
                         >
                           {color.symbol}

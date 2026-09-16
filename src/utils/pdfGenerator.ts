@@ -2,10 +2,13 @@ import { jsPDF } from 'jspdf';
 import { DotShape, LegoColor, MosaicData, MosaicSettings } from '../types';
 import { getLegoPartNumber } from './bricklinkExport';
 
-interface GeneratePdfOptions {
+export type PdfSymbolMode = 'palette' | 'sequential';
+
+export interface GeneratePdfOptions {
   mosaic: MosaicData;
   settings: MosaicSettings;
   projectName?: string;
+  symbolMode?: PdfSymbolMode;
   onProgress?: (progress: number, status: string) => void;
 }
 
@@ -13,6 +16,7 @@ export async function generateInstructionManualPdf({
   mosaic,
   settings,
   projectName = 'LEGO® Art Mosaic',
+  symbolMode = 'palette',
   onProgress,
 }: GeneratePdfOptions): Promise<jsPDF> {
   const doc = new jsPDF({
@@ -30,6 +34,30 @@ export async function generateInstructionManualPdf({
   const subPlatesY = Math.ceil(height / subSize);
   const totalPlates = subPlatesX * subPlatesY;
 
+  // Build clean alphanumeric symbol mapping for colors used in this mosaic
+  const colorSymbolMap = new Map<string, string>();
+  if (symbolMode === 'sequential') {
+    // Sequential 1..N order based on part count (most common pieces are #1, etc. - Official LEGO Art style)
+    const sortedByCount = [...mosaic.uniqueColors].sort((a, b) => {
+      const ca = mosaic.colorCounts.get(a.id)?.count || 0;
+      const cb = mosaic.colorCounts.get(b.id)?.count || 0;
+      return cb - ca;
+    });
+    sortedByCount.forEach((color, idx) => {
+      colorSymbolMap.set(color.id, String(idx + 1));
+    });
+  } else {
+    // Palette mode: use color.symbol, sanitized to uppercase ASCII alphanumeric only
+    mosaic.uniqueColors.forEach((color, idx) => {
+      const clean = (color.symbol || '').replace(/[^a-zA-Z0-9]/g, '').trim().toUpperCase();
+      colorSymbolMap.set(color.id, clean || String(idx + 1));
+    });
+  }
+
+  const getSymbol = (color: LegoColor): string => {
+    return colorSymbolMap.get(color.id) || (color.symbol || '').replace(/[^a-zA-Z0-9]/g, '').trim().toUpperCase() || '1';
+  };
+
   // 1. Render thumbnail image of full mosaic for cover page
   onProgress?.(5, 'Rendering cover artwork...');
   const thumbCanvas = document.createElement('canvas');
@@ -45,10 +73,17 @@ export async function generateInstructionManualPdf({
       const color = mosaic.pixels[y][x];
       const cx = x * 8 + 4;
       const cy = y * 8 + 4;
-      thumbCtx.fillStyle = color.hex;
-      thumbCtx.beginPath();
-      thumbCtx.arc(cx, cy, dotRadius, 0, Math.PI * 2);
-      thumbCtx.fill();
+      if (color) {
+        thumbCtx.fillStyle = color.hex;
+        thumbCtx.beginPath();
+        thumbCtx.arc(cx, cy, dotRadius, 0, Math.PI * 2);
+        thumbCtx.fill();
+      } else {
+        thumbCtx.fillStyle = '#1e2430';
+        thumbCtx.beginPath();
+        thumbCtx.arc(cx, cy, dotRadius * 0.6, 0, Math.PI * 2);
+        thumbCtx.fill();
+      }
     }
   }
   const fullMosaicImgData = thumbCanvas.toDataURL('image/jpeg', 0.9);
@@ -171,6 +206,8 @@ export async function generateInstructionManualPdf({
     const count = mosaic.colorCounts.get(color.id)?.count || 0;
     const pct = ((count / mosaic.totalDots) * 100).toFixed(1);
 
+    const symbol = getSymbol(color);
+
     // Color circle swatch with border
     doc.setFillColor(color.rgb[0], color.rgb[1], color.rgb[2]);
     doc.circle(x + 5, y + 4, 3.8, 'F');
@@ -178,27 +215,30 @@ export async function generateInstructionManualPdf({
     doc.setLineWidth(0.2);
     doc.circle(x + 5, y + 4, 3.8, 'S');
 
-    // Symbol box
+    // Symbol badge box (sized for 1-char or 2-char alphanumeric codes)
+    const boxW = symbol.length > 1 ? 7.5 : 6.2;
     doc.setFillColor(243, 244, 246);
-    doc.rect(x + 13, y + 0.5, 6, 6.8, 'F');
+    doc.rect(x + 12.5, y + 0.5, boxW, 6.8, 'F');
     doc.setDrawColor(209, 213, 219);
-    doc.rect(x + 13, y + 0.5, 6, 6.8, 'S');
+    doc.setLineWidth(0.2);
+    doc.rect(x + 12.5, y + 0.5, boxW, 6.8, 'S');
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
+    doc.setFontSize(symbol.length > 2 ? 7 : symbol.length > 1 ? 7.5 : 8.5);
     doc.setTextColor(17, 24, 39);
-    doc.text(color.symbol, x + 16, y + 5.2, { align: 'center' });
+    doc.text(symbol, x + 12.5 + boxW / 2, y + 3.9, { align: 'center', baseline: 'middle' });
 
     // Official Lego Name & BrickLink ID
+    const labelX = x + 12.5 + boxW + 2.5;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8.5);
     doc.setTextColor(31, 41, 55);
-    doc.text(color.legoName, x + 23, y + 3.8);
+    doc.text(color.legoName, labelX, y + 3.8);
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
     doc.setTextColor(107, 114, 128);
-    doc.text(`BL ID: ${color.bricklinkId} (${color.bricklinkName})`, x + 23, y + 7.2);
+    doc.text(`BL ID: ${color.bricklinkId} (${color.bricklinkName})`, labelX, y + 7.2);
 
     // Quantity count & percentage
     doc.setFont('helvetica', 'bold');
@@ -319,40 +359,51 @@ export async function generateInstructionManualPdf({
           if (globalY < height && globalX < width) {
             const color = mosaic.pixels[globalY][globalX];
 
-            // Update plate color count
-            const curr = plateColorCounts.get(color.id);
-            if (curr) {
-              curr.count++;
+            if (color) {
+              // Update plate color count
+              const curr = plateColorCounts.get(color.id);
+              if (curr) {
+                curr.count++;
+              } else {
+                plateColorCounts.set(color.id, { color, count: 1 });
+              }
+
+              const centerX = cellX + cellSize / 2;
+              const centerY = cellY + cellSize / 2;
+
+              // Dot fill
+              doc.setFillColor(color.rgb[0], color.rgb[1], color.rgb[2]);
+              doc.circle(centerX, centerY, dotR, 'F');
+
+              // Subtle outer ring
+              doc.setDrawColor(
+                Math.max(0, color.rgb[0] - 30),
+                Math.max(0, color.rgb[1] - 30),
+                Math.max(0, color.rgb[2] - 30)
+              );
+              doc.setLineWidth(0.2);
+              doc.circle(centerX, centerY, dotR, 'S');
+
+              // Symbol/Number inside the dot for error-free assembly
+              const symbol = getSymbol(color);
+              doc.setFont('helvetica', 'bold');
+              doc.setFontSize(symbol.length > 2 ? 6 : symbol.length > 1 ? 7 : 8);
+              if (color.textColor === '#FFFFFF') {
+                doc.setTextColor(255, 255, 255);
+              } else {
+                doc.setTextColor(0, 0, 0);
+              }
+              doc.text(symbol, centerX, centerY, { align: 'center', baseline: 'middle' });
             } else {
-              plateColorCounts.set(color.id, { color, count: 1 });
+              // Empty baseplate stud on this plate position
+              const centerX = cellX + cellSize / 2;
+              const centerY = cellY + cellSize / 2;
+              doc.setFillColor(220, 226, 235);
+              doc.circle(centerX, centerY, dotR * 0.45, 'F');
+              doc.setDrawColor(180, 190, 205);
+              doc.setLineWidth(0.2);
+              doc.circle(centerX, centerY, dotR * 0.45, 'S');
             }
-
-            const centerX = cellX + cellSize / 2;
-            const centerY = cellY + cellSize / 2;
-
-            // Dot fill
-            doc.setFillColor(color.rgb[0], color.rgb[1], color.rgb[2]);
-            doc.circle(centerX, centerY, dotR, 'F');
-
-            // Subtle outer ring
-            doc.setDrawColor(color.textColor === '#FFFFFF' ? 255 : 0);
-            doc.setDrawColor(
-              Math.max(0, color.rgb[0] - 30),
-              Math.max(0, color.rgb[1] - 30),
-              Math.max(0, color.rgb[2] - 30)
-            );
-            doc.setLineWidth(0.2);
-            doc.circle(centerX, centerY, dotR, 'S');
-
-            // Symbol/Number inside the dot for error-free assembly
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(8);
-            if (color.textColor === '#FFFFFF') {
-              doc.setTextColor(255, 255, 255);
-            } else {
-              doc.setTextColor(0, 0, 0);
-            }
-            doc.text(color.symbol, centerX, centerY + 2.6, { align: 'center' });
           }
         }
       }
@@ -378,6 +429,7 @@ export async function generateInstructionManualPdf({
 
       for (let i = 0; i < plateColorsSorted.length && pColorY < gridStartY + gridSize - 10; i++) {
         const { color, count } = plateColorsSorted[i];
+        const pSymbol = getSymbol(color);
 
         // Color circle
         doc.setFillColor(color.rgb[0], color.rgb[1], color.rgb[2]);
@@ -386,20 +438,26 @@ export async function generateInstructionManualPdf({
         doc.circle(rightColX + 9, pColorY + 3.5, 3.2, 'S');
 
         // Symbol badge
+        const badgeW = pSymbol.length > 1 ? 7.2 : 5.8;
         doc.setFillColor(230, 230, 230);
-        doc.rect(rightColX + 15, pColorY + 0.5, 5.5, 6, 'F');
+        doc.rect(rightColX + 15, pColorY + 0.5, badgeW, 6, 'F');
+        doc.setDrawColor(200, 200, 200);
+        doc.setLineWidth(0.2);
+        doc.rect(rightColX + 15, pColorY + 0.5, badgeW, 6, 'S');
+
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(8);
+        doc.setFontSize(pSymbol.length > 2 ? 6.5 : pSymbol.length > 1 ? 7 : 8);
         doc.setTextColor(17, 24, 39);
-        doc.text(color.symbol, rightColX + 17.7, pColorY + 4.8, { align: 'center' });
+        doc.text(pSymbol, rightColX + 15 + badgeW / 2, pColorY + 3.5, { align: 'center', baseline: 'middle' });
 
         // Color name
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(8);
         doc.setTextColor(31, 41, 55);
-        // Truncate if long
-        const displayName = color.legoName.length > 13 ? color.legoName.slice(0, 12) + '…' : color.legoName;
-        doc.text(displayName, rightColX + 24, pColorY + 4.8);
+        const textX = rightColX + 15 + badgeW + 2.5;
+        const maxLen = pSymbol.length > 1 ? 11 : 13;
+        const displayName = color.legoName.length > maxLen ? color.legoName.slice(0, maxLen - 1) + '…' : color.legoName;
+        doc.text(displayName, textX, pColorY + 4.8);
 
         // Count
         doc.setFont('helvetica', 'bold');

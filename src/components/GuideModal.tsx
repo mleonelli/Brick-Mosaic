@@ -690,6 +690,9 @@ export const GuideModal: React.FC<GuideModalProps> = ({
                       <li>
                         <strong>Colorblind-Friendly Numbered Studs</strong>: Every color is assigned a unique alphanumeric symbol printed directly on the stud diagram, matching physical sorted cups!
                       </li>
+                      <li>
+                        <strong>Dual Symbol Modes</strong>: Choose between <em>Alphanumeric Palette Codes</em> (1–9, A–Z, AQ, SB...) or <em>Sequential Cup Numbers (1, 2, 3...)</em> matching official LEGO® Art sets. All symbols use standard ASCII alphanumeric characters, guaranteeing 100% crisp, error-free vector rendering across any printer, browser, or PDF reader.
+                      </li>
                     </ul>
                   </div>
 

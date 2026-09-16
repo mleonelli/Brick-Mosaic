@@ -136,7 +136,7 @@ export default function App() {
             for (let dx = 0; dx < piece.width; dx++) {
               const y = piece.y + dy;
               const x = piece.x + dx;
-              if (y >= 0 && y < height && x >= 0 && x < width) {
+              if (y >= 0 && y < height && x >= 0 && x < width && newPixels[y][x] !== null) {
                 newPixels[y][x] = newColor;
               }
             }
@@ -148,11 +148,13 @@ export default function App() {
         for (let y = 0; y < height; y++) {
           for (let x = 0; x < width; x++) {
             const c = newPixels[y][x];
-            const existing = colorCounts.get(c.id);
-            if (existing) {
-              existing.count++;
-            } else {
-              colorCounts.set(c.id, { color: c, count: 1 });
+            if (c) {
+              const existing = colorCounts.get(c.id);
+              if (existing) {
+                existing.count++;
+              } else {
+                colorCounts.set(c.id, { color: c, count: 1 });
+              }
             }
           }
         }
@@ -181,18 +183,20 @@ export default function App() {
 
         const { width, height, pixels } = currentMosaic;
         const newPixels = pixels.map((row) =>
-          row.map((c) => (c.id === targetColorId ? newColor : c))
+          row.map((c) => (c && c.id === targetColorId ? newColor : c))
         );
 
         const colorCounts = new Map<string, { color: LegoColor; count: number }>();
         for (let y = 0; y < height; y++) {
           for (let x = 0; x < width; x++) {
             const c = newPixels[y][x];
-            const existing = colorCounts.get(c.id);
-            if (existing) {
-              existing.count++;
-            } else {
-              colorCounts.set(c.id, { color: c, count: 1 });
+            if (c) {
+              const existing = colorCounts.get(c.id);
+              if (existing) {
+                existing.count++;
+              } else {
+                colorCounts.set(c.id, { color: c, count: 1 });
+              }
             }
           }
         }
@@ -233,17 +237,31 @@ export default function App() {
         const cx = x * dotSize + dotSize / 2;
         const cy = y * dotSize + dotSize / 2;
 
-        ctx.beginPath();
-        ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-        ctx.fillStyle = color.hex;
-        ctx.fill();
+        if (color) {
+          ctx.beginPath();
+          ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+          ctx.fillStyle = color.hex;
+          ctx.fill();
 
-        // Highlight ring
-        ctx.beginPath();
-        ctx.arc(cx, cy, radius - 0.5, Math.PI * 0.8, Math.PI * 1.8);
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
-        ctx.lineWidth = 1;
-        ctx.stroke();
+          // Highlight ring
+          ctx.beginPath();
+          ctx.arc(cx, cy, radius - 0.5, Math.PI * 0.8, Math.PI * 1.8);
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        } else {
+          // Empty baseplate stud
+          const studRadius = dotSize * 0.33;
+          ctx.beginPath();
+          ctx.arc(cx, cy, studRadius, 0, Math.PI * 2);
+          ctx.fillStyle = '#161923';
+          ctx.fill();
+
+          ctx.beginPath();
+          ctx.arc(cx, cy, studRadius * 0.46, 0, Math.PI * 2);
+          ctx.fillStyle = '#0a0c10';
+          ctx.fill();
+        }
       }
     }
 
@@ -390,7 +408,7 @@ export default function App() {
                         title={`${color.legoName} (BrickLink #${color.bricklinkId}): ${count} pieces`}
                       >
                         <div
-                          className="w-3.5 h-3.5 rounded-full border border-white/20 shadow-sm shrink-0 flex items-center justify-center text-[7px] font-bold"
+                          className="min-w-3.5 h-3.5 px-0.5 rounded-full border border-white/20 shadow-sm shrink-0 flex items-center justify-center text-[6.5px] font-bold"
                           style={{
                             backgroundColor: color.hex,
                             color: color.textColor,
